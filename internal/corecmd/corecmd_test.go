@@ -1093,6 +1093,49 @@ func TestCrossPlatformCoverageNewCommandOrchestration(t *testing.T) {
 	}
 }
 
+func TestNewCommandPostMountCannotCrossDeclarationBoundary(t *testing.T) {
+	mustPanic := func(name string, postMount func(*cobra.Command), needle string) {
+		t.Helper()
+		defer func() {
+			recovered := recover()
+			if recovered == nil || !strings.Contains(recovered.(string), needle) {
+				t.Fatalf("%s panic = %v, want %q", name, recovered, needle)
+			}
+		}()
+		New(Spec{
+			Use:       name,
+			Flags:     []FlagSpec{{Name: "id", Usage: "ID", Bind: "id"}},
+			PostMount: postMount,
+			Invoke:    func(*Ctx, map[string]any) error { return nil },
+		})
+	}
+
+	mustPanic("adds-flag", func(cmd *cobra.Command) {
+		cmd.Flags().String("injected", "", "injected")
+	}, "cannot add, remove, or change the type")
+	mustPanic("changes-command-schema", func(cmd *cobra.Command) {
+		cmd.Annotations["dws.schema.contract"] = "forged"
+	}, "cannot modify framework-owned")
+	mustPanic("deletes-flag-schema", func(cmd *cobra.Command) {
+		delete(cmd.Flags().Lookup("id").Annotations, "dws.schema.property")
+	}, "cannot modify framework-owned")
+
+	cmd := New(Spec{
+		Use:   "legacy-decoration",
+		Flags: []FlagSpec{{Name: "id", Usage: "ID", Bind: "id"}},
+		PostMount: func(cmd *cobra.Command) {
+			if cmd.Annotations == nil {
+				cmd.Annotations = map[string]string{}
+			}
+			cmd.Annotations["mcp-tool"] = "legacy_tool"
+		},
+		Invoke: func(*Ctx, map[string]any) error { return nil },
+	})
+	if cmd.Annotations["mcp-tool"] != "legacy_tool" {
+		t.Fatalf("legacy annotation = %#v", cmd.Annotations)
+	}
+}
+
 func TestCrossPlatformCoverageNewCommandRunEEscapeHatch(t *testing.T) {
 	// The escape hatch replaces the dispatch body, not the declared contract:
 	// a declared Required flag is still enforced and RunE is never entered.
@@ -1634,9 +1677,14 @@ func TestCrossPlatformCoverageNewCommandConfirmFirstAnnotationAndOrder(t *testin
 		return cmd
 	}
 
-	// The declared marker is stamped even when a PostMount hook dropped the
-	// annotations map (defensive re-init path).
-	cleared := build(func(c *cobra.Command) { c.Annotations = nil })
+	// Ordinary compatibility annotations remain writable by PostMount; framework
+	// annotations are finalized before the hook and protected by an after-check.
+	cleared := build(func(c *cobra.Command) {
+		if c.Annotations == nil {
+			c.Annotations = map[string]string{}
+		}
+		c.Annotations["mcp-source"] = "legacy"
+	})
 	if cleared.Annotations[ConfirmFirstAnnotation] != "true" {
 		t.Fatalf("annotations = %#v, want declared ConfirmFirst marker", cleared.Annotations)
 	}

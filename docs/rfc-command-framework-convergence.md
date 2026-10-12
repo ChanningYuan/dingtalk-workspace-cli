@@ -1,13 +1,17 @@
 # RFC：将 DWS 命令执行收敛到一套类型化契约
 
-- **状态**：draft v5.1，征求设计评审
-- **范围**：`internal/corecmd`、`internal/helpers`（`LeafSpec`）、`internal/shortcut`
+- **状态**：draft v5.2，征求设计评审
+- **范围**：`internal/corecmd`（含 Service Method Builder 扩展）、`internal/helpers`（`LeafSpec` 与 dingtalk-dev provider）、`internal/shortcut`
 - **实现基线**：PR #830 的 `6fb08c9e`
 - **#830 过渡派发 API（仍生产使用）**：`Invoke` / `Orchestrate` / `Ctx`（见 §3 / §5.0.3；目标 mcpbind + Handler，**本里程碑不删**）
 - **同源决策**：[`flag-help-schema-homology.md`](flag-help-schema-homology.md)（路径 A：Contract 权威）
 - **框架声明定义**：本文 **§5.0**（今日 `corecmd.Spec`/`LeafSpec` 与目标 `Contract`）
 
 本文档取代收敛方案的前三版草案。它保留了 PR #830 中有价值的部分——一份声明同时驱动运行时校验、Runtime Schema 和帮助信息，外加严格的漂移门禁。`Invoke` / `Orchestrate` / `Ctx` 是 **#830 过渡派发 API**：今日仍在生产路径上，终态目标是 mcpbind 绑定 + Handler；不得在文档里写成「已丢弃」或要求本里程碑完整删派发 API。
+
+v5.2 的变更：
+
+- 新增 §5.12 Service Method Builder 扩展：`MethodDefinition` + `MethodBinding` 编译到现有 `corecmd.Spec`/`ContractDecl`，首个 provider 为 dingtalk-dev `dev mcp service` 五个操作；旧的 `rfc-unified-command-build.md` 改为指针文件。
 
 v5.1 的变更：
 
@@ -1321,6 +1325,117 @@ type PlannedStep struct {
 - 策略门禁——每个 write/high-risk **形态 3** 受管定义声明 `Plan`——随命令迁移逐条可强制。形态 1/2 在构造上已覆盖。该门禁在遗留 Shortcut 分批上线前无法覆盖全部 168 条，因此覆盖率按里程碑报告，而不是事先声称。
 - 用声明计划替换遗留手写预览，属于 §9 下的用户可见输出变更；上述 9 个预览文件各自以 approved delta 迁移。
 
+### 5.12 Service Method Builder 扩展
+
+本节是 §5.0–§5.11 的**扩展**，不是第二套框架。它回答一个问题：在 M7 全量手写命令清理之前，service/tool 类命令（lark `methodCommandSpec` / WeCom `ServiceSchema` 对应的范畴）如何在不引入 `CommandDescriptor` 或第二套 Registry 的前提下，从「每条命令手写 Cobra 构造函数」收敛为「一次声明、一处编译、一套管线」。
+
+落地目标链路：
+
+```text
+MethodDefinition（声明）
+    + MethodBinding（执行绑定，三选一）
+        ↓
+corecmd.ServiceBuilder（编译器）
+        ↓
+corecmd.Spec + ContractDecl（现有 IR，不新增）
+        ↓
+corecmd.New → Cobra leaf（现有管线）
+        ↓
+ContractFinal → Effective/Bound/Schema Registry（现有管线，不变）
+```
+
+#### 5.12.1 声明与绑定的边界沿用 §5.1
+
+§5.1 的核心规则——「`Definition` 仅是声明，执行所有权由类型安装」——在此完全保留，只是按今日 `corecmd` 词汇落地，而不是等到 mcpbind 形态 1/2 全量切换：
+
+```go
+type MethodDefinition struct {
+    Identity      MethodIdentity   // CLI 路径、ProductID、方法名、描述、示例
+    Input         InputSpec        // []ParameterSpec + []ConstraintSpec
+    Contract      ContractSpec     // Selection/Interface/DryRun/Result/Pagination
+    Safety        contract.SafetySpec
+    OutputRollout output.RolloutState
+    Validate      func(*cobra.Command, []string) error // provider-local check
+    PostMount     func(*cobra.Command) // reviewed decoration only
+}
+
+type MethodBinding struct {
+    // 恰好一个 owner：Tool+ToolExecutor、Invoke 或 Orchestrate。
+    Tool         string
+    ToolExecutor corecmd.InvokeFunc // provider's standard executor for Tool
+    Invoke       corecmd.InvokeFunc // 单次自定义执行（provider 特有参数变换/特殊验证）
+    Orchestrate  corecmd.OrchestrateFunc // 多步流程（轮询/readback/多 MCP 调用）
+}
+```
+
+与 §5.1 的对应关系：
+
+| 本节 | §5.1 目标形态 | 说明 |
+|---|---|---|
+| `MethodDefinition` | `Definition` | CLI/Contract/Safety 是声明；Validate/PostMount 仅是受约束的 provider hook，不拥有执行所有权 |
+| `MethodBinding` | `mcpbind.Bind` / `WithHandler` | 执行所有权；`Tool` 是今日对形态 1 的直达（§5.0 决策 19），`Invoke`/`Orchestrate` 是 #830 过渡派发 API 的受控用法 |
+| 零值 MethodBinding | 不可表示所有者的 `Definition` | Builder fail-closed 拒绝「无 owner」与冲突组合；`Tool+ToolExecutor` 算一个标准 Tool owner，基数由编译器保证 |
+| `RunE` | 裸路径豁免 | 新 MethodDefinition 不暴露 `RunE`；`corecmd.Spec.RunE` 仅供 legacy Cobra 迁移（Tier3 → Tier2/1） |
+
+#### 5.12.2 编译目标：`corecmd.Spec` 是 IR，不是第二事实源
+
+`ServiceBuilder` 把 `MethodDefinition` 编译为现有 `corecmd.Spec`（§5.0.2），逐字段映射：
+
+- `ParameterSpec`（Name/Type/Shorthand/Bind/Usage/Required/Default/Enum/Format/Aliases/EnvVar/Hidden/OmitEmpty/Transform/Input）→ 现有 `corecmd.FlagSpec`，**不复制或新增参数模型**；
+- `MethodIdentity` → `ContractDecl.Identity`（Title/Description 走 §「Description declare vs delivery」规则）；
+- `ContractSpec` → `ContractDecl` 的 Selection/Interface/DryRun/Result/Pagination，**继续显式声明，不从 MCP response/help 文本/flag 名推断**；
+- `Safety` → 现有 `contract.SafetySpec`，confirmation 时序由 corecmd 统一负责。
+
+Builder 责任（封闭清单）：
+
+1. 校验 MethodDefinition（CLIPath 非空无空段、同 service 无重复 path、末级 path 与 `Spec.Use` 一致、编译出的 `ContractDecl.Identity.CLIPath/PrimaryCLIPath` 与 `MethodIdentity.CLIPath` 一致、Name/Bind 无歧义、required/default/enum/transform 组合合法、Binding 基数恰好为 1）；
+2. 按 `CLIPath` 创建/复用 Cobra group，group 一律经现有 `corecmd.ApplyGroupPolicy` 配置（§5.0.2a）——**不重新实现 group 行为**；
+3. 编译为 `corecmd.Spec` 并调用现有 `corecmd.New`；
+4. 挂载真实 runnable leaf。
+
+Builder **不**持有 SchemaRegistry、EffectiveCommandRegistry、BoundCommandRegistry 或任何第二份身份索引；**不**自行调用 `PrepareCommandTree`（App root 工厂仍是唯一准备点，见 AGENTS.md「一次调用」规则）；**不**反向由 Schema 生成运行时命令。
+
+ContractFinal 仍从真实 Cobra leaf 收集（§5.0.2 现管线）：
+
+```text
+MethodDefinition → ContractDecl → corecmd.Spec → Cobra leaf → ContractFinal → Registry
+```
+
+`CLIPath` 与编译后 `Contract.Identity.CLIPath` 只做一致性校验，不互相推导或覆盖。
+
+#### 5.12.3 Invoke 的约束（防 #830 过渡 API 扩散）
+
+`Invoke`/`Orchestrate` 是 **#830 过渡派发 API**（见文首声明），在 MethodBinding 下受以下硬边界，防止其成为新的逃生舱：
+
+允许：
+
+- provider 特有参数变换、后端请求、特殊 warning、特殊结果验证、多步编排/轮询/readback。
+
+不允许：
+
+- 注册 flag、改写命令路径、重做通用 required/enum 校验；
+- 直接注册 Contract/Schema/身份注解；
+- 绕过 Safety/Result/确认 pipeline、接管 Cobra 或写通用 stdout/stderr。
+
+`Tool` 绑定不写业务执行体：provider 通过 `ToolExecutor` 注入标准 runner，Builder 只把它编译为现有 `Spec.Invoke`（`BuildArgs → ToolExecutor → runner → unified output`）。`Invoke` 收到的是已完成绑定与校验的 args 和 ExecutionContext——与 §5.1「校验器/派发顺序」一致：required/enum/constraint/validator/Risk 确认全部先于执行所有者。
+
+#### 5.12.4 迁移与门禁
+
+- **首个 Provider**：dingtalk-dev 的 `dev mcp service list/get/create/update/delete` 五个操作（`internal/helpers/dev_mcp_service_methods.go` 提供 `devMCPServiceMethods`，`dev_mcp.go` 只做挂载）。connect/daemon/异步轮询/复杂 publish debug workflow 暂缓（Orchestrate 就绪后再评估）。
+- **兼容策略沿用 §6/§9**：第一阶段不改 CLIPath/alias/参数名/默认值/required/enum/empty 行为/env fallback/确认顺序/backend tool 与 payload/调用次数/错误与 warning 文本/JSON envelope/ContractFinal identity/Schema source hash。Builder 不自动「修正」历史行为；无法用 ParameterSpec 表达的语义用显式 Transform/Validate/Invoke 保留并加 parity 测试。
+- **Parity 门禁**：新旧两侧分别构建隔离 root，比较命令树/flags/Bind/默认值/ContractFinal identity/Schema 参数/Safety/Result/Pagination/backend invocation payload/dry-run/确认/错误/warning/输出 envelope——**不只比 help**。
+- **入口门禁（M1 规则在本节的实例化）**：新 service/tool 命令必须经 MethodDefinition 声明，不得再新增手写 Cobra 构造函数作为事实源；`RunE` 仅供 legacy 迁移。
+- **Catalog 归宿（§5.12 与决策 12 的关系）**：MethodDefinition 是 Go-native 声明源。未来导出 normalized Catalog Snapshot（lint/diff/breaking change 检测）是 §「从规范表面生成 Catalog」的消费者，不是第二权威——运行时 Schema 仍由 live Cobra tree 管线生成。
+
+#### 5.12.5 与既有章节的一致性检查
+
+- §5.0 声明定义：MethodDefinition 只贡献 §5.0.2 列出的数据字段，无并行字段；
+- §5.1 Definition/Executable：声明/执行分离按类型落地，RunE 不进入新 authoring API；
+- §5.7 mcpbind：MethodBinding.`Tool` 是今日形态 1 的直达路径；mcpbind 全量切换后，MethodBinding 的编译目标从「默认 Invoke」替换为 `mcpbind.Bind`，**声明面不变**——这是本扩展相对 §5.1 的存在价值：命令作者迁移一次，框架内核可以继续演进；
+- §5.8 裸路径：不受影响，豁免清单照旧；
+- §5.11 dry-run：`Tool` 绑定自动获得框架 dry-run；`Orchestrate` 命令迁移时按 §5.11.1 对应渲染策略处理；
+- AGENTS.md 分层：MethodDefinition 产出的命令是 Tier1（`corecmd.New` 全托管），不新增 Tier。
+
 ---
 
 ## 6. 能力对等矩阵
@@ -1405,6 +1520,8 @@ M0 不能对 Contract 编译或受管 Resolve 做基准，因为这些组件尚�
 **门禁**：另一开发者可从干净检出重跑普查与快照并得到相同结果。在评判实现变更前记录基准噪声地板与预算。
 
 ### M1 — 原子核心、mcpbind 与 Leaf 采纳
+
+> **Service Method Builder（§5.12）不排在 M1–M7 主序列内。** 它是独立扩展轨道：随时可在 `internal/corecmd` 落地 `ServiceBuilder + MethodDefinition + MethodBinding`（复用现有 `corecmd.Spec`/`ContractDecl`/`ApplyGroupPolicy`，等 M1 mcpbind 形态落地后把 `Tool` 绑定的编译目标替换为 `mcpbind.Bind`），以 dingtalk-dev `dev mcp service` 五操作为首个 Provider，并遵守与 M1 相同的入口门禁与 parity 门禁（§5.12.4）。它不阻塞任何里程碑，也不被任何里程碑阻塞。
 
 这是一个合并边界，即便拆成可评审提交也是如此。不要合并一个休眠的第二核心，再等后续 PR 才在活命令上证明它。
 

@@ -55,6 +55,30 @@ func TestNormalizeResultSpecRejectsInvalidContractsDeterministically(t *testing.
 		{"schema null", func(r *ResultSpec) { r.DataSchema = json.RawMessage(`null`) }, "data_schema: must be one JSON object"},
 		{"trailing garbage", func(r *ResultSpec) { r.DataSchema = json.RawMessage(`{} x`) }, "data_schema: must be one JSON object"},
 		{"multiple schemas", func(r *ResultSpec) { r.DataSchema = json.RawMessage(`{} {}`) }, "data_schema: must be one JSON object"},
+		{"unknown schema type", func(r *ResultSpec) {
+			r.DataSchema = json.RawMessage(`{"type":"record"}`)
+		}, "data_schema.type contains unknown type"},
+		{"empty schema type array", func(r *ResultSpec) {
+			r.DataSchema = json.RawMessage(`{"type":[]}`)
+		}, "data_schema.type must be a JSON Schema type string or non-empty array"},
+		{"duplicate schema type", func(r *ResultSpec) {
+			r.DataSchema = json.RawMessage(`{"type":["string","string"]}`)
+		}, "data_schema.type contains duplicate type"},
+		{"non-string schema type item", func(r *ResultSpec) {
+			r.DataSchema = json.RawMessage(`{"type":["string",2]}`)
+		}, "data_schema.type[1] must be a JSON Schema type string"},
+		{"required is not an array", func(r *ResultSpec) {
+			r.DataSchema = json.RawMessage(`{"required":"id"}`)
+		}, "data_schema.required must be an array of strings"},
+		{"duplicate required field", func(r *ResultSpec) {
+			r.DataSchema = json.RawMessage(`{"required":["id","id"]}`)
+		}, "data_schema.required contains duplicate field"},
+		{"invalid additional properties", func(r *ResultSpec) {
+			r.DataSchema = json.RawMessage(`{"additionalProperties":"yes"}`)
+		}, "data_schema.additionalProperties must be a boolean or JSON Schema object"},
+		{"nested invalid additional properties schema", func(r *ResultSpec) {
+			r.DataSchema = json.RawMessage(`{"properties":{"value":{"type":"object","description":"value","additionalProperties":{"type":"record"}}}}`)
+		}, "data_schema.properties.value.additionalProperties.type contains unknown type"},
 		{"missing property description", func(r *ResultSpec) {
 			r.DataSchema = json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}}}`)
 		}, "properties.id requires description"},
