@@ -246,11 +246,16 @@ func TestCrossPlatformCoverageValidationAdapters(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				handlerCalls := 0
-				cmd := &cobra.Command{Use: "leaf", RunE: func(*cobra.Command, []string) error { return nil }}
-				cmd.Flags().Var(&validationFailingValue{err: tc.err}, "value", "value")
-				cmd.SetFlagErrorFunc(func(*cobra.Command, error) error {
-					handlerCalls++
-					return stderrors.New("handler destroyed parser cause")
+				cmd := New(Spec{
+					Use: "leaf",
+					PostMount: func(cmd *cobra.Command) {
+						cmd.Flags().Var(&validationFailingValue{err: tc.err}, "value", "value")
+						cmd.SetFlagErrorFunc(func(*cobra.Command, error) error {
+							handlerCalls++
+							return stderrors.New("handler destroyed parser cause")
+						})
+					},
+					Invoke: func(*Ctx, map[string]any) error { return nil },
 				})
 				prepareValidationTree(t, cmd)
 				cmd.SilenceErrors = true
@@ -272,8 +277,13 @@ func TestCrossPlatformCoverageValidationAdapters(t *testing.T) {
 		parserCause := apperrors.NewAPI("API failed")
 		replacementCalls := 0
 		root := &cobra.Command{Use: "dws", SilenceErrors: true, SilenceUsage: true}
-		leaf := &cobra.Command{Use: "leaf", RunE: func(*cobra.Command, []string) error { return nil }}
-		leaf.Flags().Var(&validationFailingValue{err: parserCause}, "value", "value")
+		leaf := New(Spec{
+			Use: "leaf",
+			PostMount: func(cmd *cobra.Command) {
+				cmd.Flags().Var(&validationFailingValue{err: parserCause}, "value", "value")
+			},
+			Invoke: func(*Ctx, map[string]any) error { return nil },
+		})
 		leaf.SetFlagErrorFunc(func(*cobra.Command, error) error {
 			replacementCalls++
 			return stderrors.New("replacement destroyed parser cause")

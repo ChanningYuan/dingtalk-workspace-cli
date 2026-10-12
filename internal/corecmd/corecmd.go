@@ -22,9 +22,8 @@
 //   - Declare = Spec data fields (Flags, Constraints, Safety,
 //     ConstParams, Use/Short/Long/Example). New registers, validates,
 //     confirms, and embeds those facts into dws.schema.*.
-//   - Execute = Validate / Operation / Invoke / Orchestrate / RunE / PostMount.
-//     Typed Operation handlers receive Request values; legacy hooks consume
-//     assembled args and must not invent the CLI surface.
+//   - Execute = Validate / Invoke / Orchestrate / RunE / PostMount. Hooks
+//     consume assembled args; they must not invent the CLI surface.
 //   - Annotate = explicit cobra annotations when a fact is not (yet) a Contract
 //     field (e.g. a cross-flag constraint or parameter metadata fact).
 //     Inference-only Schema/help is forbidden.
@@ -56,13 +55,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	"github.com/DingTalk-Real-AI/dingtalk-workspace-cli/internal/corecmd/contract"
 	"github.com/DingTalk-Real-AI/dingtalk-workspace-cli/internal/corecmd/contractfinal"
@@ -238,8 +235,8 @@ const (
 //   - Validate / PostMount — orchestration only; must not register business flags
 //     or assemble business params that belong in Flags/ConstParams.
 //
-// Exactly one of RunE / Invoke / ResultInvoke / Operation / Orchestrate must be
-// set; New validates this at construction time. Non-leaf commands are declared
+// Exactly one of RunE / Invoke / ResultInvoke / Orchestrate must be set; New
+// validates this at construction time. Non-leaf commands are declared
 // separately through ApplyGroupPolicy so leaf execution fields can never be
 // configured and then silently ignored. corecmd stays dispatch-agnostic and
 // never calls a backend: the adapters (FromLeafSpec / FromShortcut) supply the
@@ -291,9 +288,6 @@ type Spec struct {
 	Invoke func(c *Ctx, toolArgs map[string]any) error
 	// ResultInvoke executes once and returns an immutable framework 2.0 result.
 	ResultInvoke func(c *Ctx, toolArgs map[string]any) (output.CommandResult, error)
-	// typedResultInvoke is installed only by Operation.Mount. It is deliberately
-	// not an authoring field: typed Operation owns its Request/Response types.
-	typedResultInvoke func(c *Ctx) (output.CommandResult, error)
 	// Orchestrate executes a multi-step command; it assembles whatever payloads
 	// it needs from the Ctx.
 	Orchestrate func(c *Ctx) error
@@ -377,8 +371,8 @@ func (c *Ctx) Yes() bool { return BoolFlag(c.cmd, "yes") }
 // orchestration path: dispatch declaration check → flag registration →
 // constraint declaration checks → Runtime Schema projection → constraint help →
 // PostMount → generated RunE{ [ConfirmFirst: ConfirmSafety →]
-// required → constraints → Validate → typed Operation or BuildArgs →
-// ConfirmSafety → Invoke/ResultInvoke/Orchestrate }.
+// required → constraints → Validate → BuildArgs → ConfirmSafety →
+// Invoke/Orchestrate }.
 //
 // Behavior matches the former helpers.NewLeafCommand, which always dispatched
 // (Call → Server → callMCPTool) and therefore could not express a dispatcher-less
@@ -414,9 +408,7 @@ func New(spec Spec) *cobra.Command {
 		cmd.Long = strings.TrimRight(cmd.Long, "\n") + help
 	}
 	if spec.PostMount != nil {
-		before := snapshotPostMountSurface(cmd)
 		spec.PostMount(cmd)
-		assertPostMountSurfaceUnchanged(cmd, before)
 	}
 	attachInterfaceBoolConstParams(cmd, spec.ConstParams)
 	if spec.OutputRollout != "" {
@@ -429,81 +421,18 @@ func New(spec Spec) *cobra.Command {
 		cmd.Annotations[ConfirmFirstAnnotation] = "true"
 	}
 	installExecution(cmd, executionSpec{
-		Flags:             spec.Flags,
-		Constraints:       spec.Constraints,
-		Safety:            spec.Safety,
-		ConfirmFirst:      spec.ConfirmFirst,
-		ConstParams:       spec.ConstParams,
-		Validate:          spec.Validate,
-		RunE:              spec.RunE,
-		Invoke:            spec.Invoke,
-		ResultInvoke:      spec.ResultInvoke,
-		typedResultInvoke: spec.typedResultInvoke,
-		Orchestrate:       spec.Orchestrate,
+		Flags:        spec.Flags,
+		Constraints:  spec.Constraints,
+		Safety:       spec.Safety,
+		ConfirmFirst: spec.ConfirmFirst,
+		ConstParams:  spec.ConstParams,
+		Validate:     spec.Validate,
+		RunE:         spec.RunE,
+		Invoke:       spec.Invoke,
+		ResultInvoke: spec.ResultInvoke,
+		Orchestrate:  spec.Orchestrate,
 	})
 	return cmd
-}
-
-type postMountSurface struct {
-	flagTypes     map[string]string
-	commandSchema map[string][]string
-	flagSchema    map[string]map[string][]string
-}
-
-func snapshotPostMountSurface(cmd *cobra.Command) postMountSurface {
-	surface := postMountSurface{
-		flagTypes:     map[string]string{},
-		commandSchema: commandSchemaAnnotations(cmd.Annotations),
-		flagSchema:    map[string]map[string][]string{},
-	}
-	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
-		surface.flagTypes[flag.Name] = flag.Value.Type()
-		surface.flagSchema[flag.Name] = flagSchemaAnnotations(flag.Annotations)
-	})
-	return surface
-}
-
-func assertPostMountSurfaceUnchanged(cmd *cobra.Command, before postMountSurface) {
-	after := snapshotPostMountSurface(cmd)
-	if !reflect.DeepEqual(after.flagTypes, before.flagTypes) {
-		panic(fmt.Sprintf("command %q PostMount cannot add, remove, or change the type of business flags", cmd.Use))
-	}
-	if !reflect.DeepEqual(after.commandSchema, before.commandSchema) || !reflect.DeepEqual(after.flagSchema, before.flagSchema) {
-		panic(fmt.Sprintf("command %q PostMount cannot modify framework-owned dws.schema.* annotations", cmd.Use))
-	}
-}
-
-func commandSchemaAnnotations(annotations map[string]string) map[string][]string {
-	if len(annotations) == 0 {
-		return nil
-	}
-	out := map[string][]string{}
-	for key, value := range annotations {
-		if strings.HasPrefix(key, "dws.schema.") {
-			out[key] = []string{value}
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func flagSchemaAnnotations(annotations map[string][]string) map[string][]string {
-	if len(annotations) == 0 {
-		return nil
-	}
-	out := map[string][]string{}
-	for key, values := range annotations {
-		if !strings.HasPrefix(key, "dws.schema.") {
-			continue
-		}
-		out[key] = append([]string(nil), values...)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
 }
 
 // executionSpec is private retained state for the existing RunE pipeline, not
@@ -511,17 +440,16 @@ func flagSchemaAnnotations(annotations map[string][]string) map[string][]string 
 // Keeping this separate from Spec also avoids allocating space for zeroed help
 // and Contract fields in every command's execution closure.
 type executionSpec struct {
-	Flags             []FlagSpec
-	Constraints       []Constraint
-	Safety            contract.SafetySpec
-	ConfirmFirst      bool
-	ConstParams       map[string]any
-	Validate          func(*cobra.Command, []string) error
-	RunE              func(*cobra.Command, []string) error
-	Invoke            func(*Ctx, map[string]any) error
-	ResultInvoke      func(*Ctx, map[string]any) (output.CommandResult, error)
-	typedResultInvoke func(*Ctx) (output.CommandResult, error)
-	Orchestrate       func(*Ctx) error
+	Flags        []FlagSpec
+	Constraints  []Constraint
+	Safety       contract.SafetySpec
+	ConfirmFirst bool
+	ConstParams  map[string]any
+	Validate     func(*cobra.Command, []string) error
+	RunE         func(*cobra.Command, []string) error
+	Invoke       func(*Ctx, map[string]any) error
+	ResultInvoke func(*Ctx, map[string]any) (output.CommandResult, error)
+	Orchestrate  func(*Ctx) error
 }
 
 func installExecution(cmd *cobra.Command, spec executionSpec) {
@@ -545,21 +473,6 @@ func installExecution(cmd *cobra.Command, spec executionSpec) {
 					}
 				}
 				return spec.Orchestrate(ctx)
-			}
-			if spec.typedResultInvoke != nil {
-				if !spec.ConfirmFirst {
-					if err := ConfirmSafety(cmd, spec.Safety); err != nil {
-						return err
-					}
-				}
-				if !output.UsesUnifiedResult(cmd) {
-					return fmt.Errorf("command %q uses typed Operation without an active unified-result rollout", cmd.CommandPath())
-				}
-				result, err := spec.typedResultInvoke(ctx)
-				if err != nil {
-					return err
-				}
-				return output.StoreResult(cmd.Context(), result)
 			}
 			toolArgs, err := BuildArgs(cmd, spec.Flags)
 			if err != nil {
@@ -659,15 +572,12 @@ func validateDispatchDecl(spec Spec) {
 	if spec.ResultInvoke != nil {
 		declared++
 	}
-	if spec.typedResultInvoke != nil {
-		declared++
-	}
 	if spec.Orchestrate != nil {
 		declared++
 	}
 	if declared != 1 {
 		panic(fmt.Sprintf(
-			"command %q must declare exactly one of RunE/Invoke/Orchestrate, got %d (ResultInvoke/Operation are also dispatchers)",
+			"command %q must declare exactly one of RunE/Invoke/Orchestrate, got %d (ResultInvoke is also a dispatcher)",
 			spec.Use, declared))
 	}
 	// ConfirmFirst only changes the ordering of a declared confirmation gate.

@@ -19,13 +19,21 @@ import (
 	"github.com/DingTalk-Real-AI/dingtalk-workspace-cli/internal/executor"
 )
 
-// Cursor pagination is declared directly on each devapp list LeafSpec and is
-// applied to backend params by devAppCallCursor. PostMount only carries leaf
-// metadata.
+// Cursor pagination is a devapp list tool, not a LeafSpec declaration.
+// List factories compose registerDevAppCursorFlags (PostMount) with
+// devAppCallCursor (Call). LeafSpec itself has no Cursor field and does not
+// list --cursor/--page-size in Flags.
 //
 // Semantics stay PASS-THROUGH: the CLI forwards cursor/pageSize into upstream
 // params and the upstream returns nextCursor/hasMore. No synthesis, no
 // offset/page translation — see docs/cursor-pagination-design.md.
+
+// registerDevAppCursorFlags adds the two cursor flags every list/search command
+// exposes. pageSize defaults to 20.
+func registerDevAppCursorFlags(cmd *cobra.Command) {
+	cmd.Flags().String("cursor", "", "游标令牌：首次查询留空，续翻传上次 meta.pagination.next_token")
+	cmd.Flags().Int("page-size", 20, "单页条数，默认 20")
+}
 
 // devAppApplyCursorParams forwards cursor/pageSize into params as-is. cursor is
 // only set when non-empty (first page omits it). size < 1 floors to 20.
@@ -52,5 +60,6 @@ func devAppCallCursor(runner executor.Runner) func(*cobra.Command, string, map[s
 func devAppMetaCursor(tool string) func(*cobra.Command) {
 	return func(cmd *cobra.Command) {
 		devAppLeafMeta(cmd, tool)
+		registerDevAppCursorFlags(cmd)
 	}
 }

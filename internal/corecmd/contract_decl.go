@@ -114,9 +114,6 @@ func validateContractDecl(spec Spec) {
 			"command %q declares Contract but is missing %s: a declared Contract is the final source and must carry the full reviewed prose (no hints fallback)",
 			spec.Use, strings.Join(missing, ", ")))
 	}
-	if err := contract.ValidateToolIdentity(productID, name); err != nil {
-		panic(fmt.Sprintf("command %q has invalid Contract.Identity: %v", spec.Use, err))
-	}
 	wantCanonical := productID + "." + name
 	if canonical != wantCanonical {
 		panic(fmt.Sprintf(

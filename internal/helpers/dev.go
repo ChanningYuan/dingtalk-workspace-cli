@@ -94,11 +94,11 @@ func (devHandler) Command(runner executor.Runner) *cobra.Command {
 	newGroupCommand(doc)
 	doc.AddCommand(newDevDocSearchCommand(runner))
 
-	newDevMCPCommand(runner, root)
 	root.AddCommand(
 		newDevAppCommand(runner),
 		newDevAppRobotConnectCommand(runner),
 		doc,
+		newDevMCPCommand(runner),
 	)
 	return root
 }

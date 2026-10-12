@@ -121,43 +121,6 @@ func TestCrossPlatformCoverageNewCommandEmbedsFullContractDeclAsFinalSource(t *t
 	}
 }
 
-func TestFrameworkContractDeclRejectsInvalidIdentityParts(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		productID string
-		toolName  string
-	}{
-		{name: "product dot", productID: "dev.product", toolName: "get"},
-		{name: "name dot", productID: "dev", toolName: "get.detail"},
-		{name: "name whitespace", productID: "dev", toolName: "get detail"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			defer func() {
-				recovered := recover()
-				if recovered == nil || !strings.Contains(recovered.(string), "invalid Contract.Identity") {
-					t.Fatalf("panic = %v", recovered)
-				}
-			}()
-			New(Spec{
-				Use: "identity-test",
-				Contract: ContractDecl{
-					Description: "description",
-					Interface:   &contract.InterfaceSpec{Mode: contract.InterfaceModeLocal, Availability: contract.InterfaceAvailable},
-					Selection: contract.SelectionSpec{
-						AgentSummary: "summary", UseWhen: []string{"use"}, AvoidWhen: []string{"avoid"}, Examples: []string{"dws identity-test"},
-					},
-					Identity: contract.ToolIdentitySpec{
-						ProductID: tc.productID, Name: tc.toolName,
-						CanonicalPath: tc.productID + "." + tc.toolName,
-						CLIPath:       "dev identity-test", PrimaryCLIPath: "dev identity-test",
-					},
-				},
-				Invoke: func(*Ctx, map[string]any) error { return nil },
-			})
-		})
-	}
-}
-
 func TestFrameworkContractDeclResultMarksNonEmptyAndRejectsInvalidSchema(t *testing.T) {
 	if (ContractDecl{Result: &contract.ResultSpec{}}).Empty() {
 		t.Fatal("Result declaration was treated as empty")

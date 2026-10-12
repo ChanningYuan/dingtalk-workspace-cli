@@ -125,32 +125,6 @@ Schema contract) keep separate authorities — do not merge them with
 - **Do not add** new production `AnnotateRuntimeRisk` / `AnnotateRuntimeGate`
   (`runtime_gate`) call sites; migrate leaves to declared `Safety` /
   `ContractDecl` instead. Existing annotate sites may remain until migrated.
-- Service Method Builder (extension of §5.12 in
-  `docs/rfc-command-framework-convergence.md`; pointer doc:
-  `docs/rfc-unified-command-build.md` — merged, no new increments there):
-  - `MethodDefinition` (Identity/Input/Contract/Safety plus constrained local
-    validation/mount decoration) + `MethodBinding` (Tool+provider executor /
-    Invoke / Orchestrate — **exactly one owner**) compile **only** to the
-    existing `corecmd.Spec` + `ContractDecl`; no `CommandDescriptor`, no
-    parallel Registry, no reverse Schema→command generation.
-  - New service/tool commands must author via `MethodDefinition` — no new
-    hand-written Cobra constructor factories as the source of truth;
-    `RunE` remains legacy-migration only.
-  - `Invoke`/`Orchestrate` inherit the #830 transition-dispatch boundary:
-    they may not register flags, alter paths, re-run generic required/enum,
-    register Contract/Schema, bypass Safety/Result/confirmation pipeline, or
-    take over Cobra / write generic stdout/stderr.
-  - Builder-created groups go through the existing `corecmd.ApplyGroupPolicy`;
-    the Builder never calls `PrepareCommandTree` (app root factory stays the
-    single prepare point). Builder never holds SchemaRegistry /
-    EffectiveCommandRegistry / a second identity index — `ContractFinal`
-    stays collected from live Cobra leaves.
-  - Migrations keep CLIPath/alias/flag names/defaults/required/enum/empty
-    semantics, confirmation order, backend tool+payload+call counts, error
-    and warning text, JSON envelope, ContractFinal identity, and Schema
-    source hash byte-for-byte; parity gates must compare invocation payloads,
-    not just help output. First provider: `dev mcp service`
-    list/get/create/update/delete.
 
 ## flag / help / schema homology
 

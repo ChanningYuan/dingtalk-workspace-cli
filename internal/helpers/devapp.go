@@ -314,8 +314,6 @@ func newDevAppEventListCommand(runner executor.Runner) *cobra.Command {
 		Flags: []LeafFlag{
 			{Name: "unified-app-id", Usage: "开放平台统一应用 ID（必填）", Bind: "unifiedAppId", Trim: true, Required: true, RequiredHint: "--unified-app-id 为必填"},
 			{Name: "keyword", Usage: "事件搜索关键词，支持按事件码或事件名称模糊匹配", Bind: "keyword", Trim: true, OmitEmpty: true},
-			{Name: "cursor", Usage: "游标令牌：首次查询留空，续翻传上次 meta.pagination.next_token", Bind: "cursor", Trim: true, OmitEmpty: true},
-			{Name: "page-size", Usage: "单页条数，默认 20", Kind: LeafInt, Default: "20", ArgDefault: "20", Bind: "pageSize"},
 		},
 		Contract: LeafContract{
 			Identity: contract.ToolIdentitySpec{
@@ -431,8 +429,6 @@ func newDevAppListCommand(runner executor.Runner) *cobra.Command {
 			{Name: "filter-cool-app", Usage: "酷应用过滤枚举；不确定时不要传", Kind: LeafInt, Bind: "filterCoolApp"},
 			{Name: "sort-type", Usage: "排序字段，如 gmt_modified", Bind: "sortType", Trim: true, OmitEmpty: true},
 			{Name: "sort-order", Usage: "排序方向 asc 或 desc", Bind: "sortOrder", Trim: true, OmitEmpty: true},
-			{Name: "cursor", Usage: "游标令牌：首次查询留空，续翻传上次 meta.pagination.next_token", Bind: "cursor", Trim: true, OmitEmpty: true},
-			{Name: "page-size", Usage: "单页条数，默认 20", Kind: LeafInt, Default: "20", ArgDefault: "20", Bind: "pageSize"},
 		},
 		Contract: LeafContract{
 			Identity: contract.ToolIdentitySpec{
@@ -911,8 +907,6 @@ func newDevAppPermissionListCommand(runner executor.Runner) *cobra.Command {
 			{Name: "auth-status", Usage: "权限状态：ALL、AUTHED、UNAUTHED", Default: "ALL", Bind: "authStatus", Trim: true, OmitEmpty: true, Transform: func(raw string) (any, error) { return strings.ToUpper(raw), nil }},
 			{Name: "scope-type", Usage: "权限一级类型：APP 或 SNS", Bind: "scopeType", Trim: true, OmitEmpty: true, Transform: func(raw string) (any, error) { return strings.ToUpper(raw), nil }},
 			{Name: "api-status", Usage: "开发者后台 apiStatus 过滤", Bind: "apiStatus", Trim: true, OmitEmpty: true},
-			{Name: "cursor", Usage: "游标令牌：首次查询留空，续翻传上次 meta.pagination.next_token", Bind: "cursor", Trim: true, OmitEmpty: true},
-			{Name: "page-size", Usage: "单页条数，默认 20", Kind: LeafInt, Default: "20", ArgDefault: "20", Bind: "pageSize"},
 		},
 		Contract: LeafContract{
 			Identity: contract.ToolIdentitySpec{
@@ -1587,8 +1581,6 @@ func newDevAppVersionListCommand(runner executor.Runner) *cobra.Command {
 		Safety:  devAppSafetyRead(),
 		Flags: []LeafFlag{
 			{Name: "unified-app-id", Usage: "开放平台统一应用 ID（必填）", Bind: "unifiedAppId", Trim: true, Required: true, RequiredHint: "--unified-app-id 为必填"},
-			{Name: "cursor", Usage: "游标令牌：首次查询留空，续翻传上次 meta.pagination.next_token", Bind: "cursor", Trim: true, OmitEmpty: true},
-			{Name: "page-size", Usage: "单页条数，默认 20", Kind: LeafInt, Default: "20", ArgDefault: "20", Bind: "pageSize"},
 		},
 		Contract: LeafContract{
 			Identity: contract.ToolIdentitySpec{
