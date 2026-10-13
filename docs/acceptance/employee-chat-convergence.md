@@ -8,9 +8,9 @@
 - `--wait-delivery`：个人文本、Markdown 或普通引用回复查询发送任务的回执，输出 `openMessageId`、`conversationId`、`deliveryStatus`、`idempotencyKey`。遵循命令现有输出契约；未来统一 envelope 时字段位于 `data`。
 - `--employee-context`：JSON 含 `agentUuid`、`channel`、`bindingRevision`；要求显式 Profile、stdin、回执与幂等键。读取和发送前核对绑定仍为 bound/running，私聊目标必须是 connect 固定的主管。
 - chat 原有用户确认保持生效。connect 已授权的宿主通过 `--yes` 执行自动回传；上下文只是绑定约束，不能代替授权。
-- `local_agent` 的入站权限采用 DEAP 已发布可见范围（含所选部门子部门）；其他场景保留本地白名单。两者都不能替代固定主管审批身份。
+- 正式绑定的 `local_agent` 由平台保证私聊投递权限、群内 @ 可回复；本地不重复查询可见范围。其他场景保留本地白名单，聊天权限不能替代固定主管审批身份。
 
-DSH 启动要求 `capabilities.chatDelivery=true`；缺少能力时明确提示升级 DWS 并停止启动。发送失败或回执未知不会切换协议重发。DWS 自带 worker 与自身版本同步，直接使用通用 chat。
+DSH 启动要求 `capabilities.chatDelivery=true` 与 `capabilities.bindingAccessPolicy=true`；缺少能力时明确提示升级 DWS 并停止启动。发送失败或回执未知不会切换协议重发。DWS 自带 worker 与自身版本同步，直接使用通用 chat。
 
 ## 本地验收方法
 
@@ -25,12 +25,12 @@ DWS_JOINT_BINARY=/absolute/path/to/built/dws node --test test/digital-employee-c
 该验收不发送真实钉钉业务消息，也不证明云端账号权限或真实业务 E2E。
 
 
-## DEAP 可见范围联合验收
+## 平台入站权限联合验收
 
-- DWS 使用绑定的管理 Profile 查询 published；以员工 Profile 精确匹配消息发送者开放 ID。ALL 需确认企业成员，PARTIAL 支持成员及部门子树；部门遍历最多 256 个节点，查询失败或超限拒绝处理。
-- `channel capabilities.visibilityAccess` 声明能力；`channel binding --stdin` 增加可选 senderOpenDingTalkId / senderName，返回 accessPolicy，DEAP 策略同时返回 allowed。名称仅用于检索，开放 ID 必须精确匹配。
-- 内置 Agent 和 DSH 均在任务调度前判断；拒绝不启动 Agent，查询失败不写事件去重。旧受管绑定在升级后的普通启动阶段迁移，必须从本机精确 Profile 中确认唯一原主管并核验 published 身份；失败阻止启动，可通过原管理 Profile 的 connect restart 恢复，不能用其他账号接管。
-- 迁移枚举遇到已验证的明确空查询（单个完整 JSON 文本块，仅含 `success:true` 和 `result:[]`）时继续检查其他候选；RPC 错误、畸形结果、附加错误/分页/截断信息及多重精确身份仍拒绝迁移。总预算保持 10 秒，普通 connect 仍必须解析出唯一主管。
-- DSH 的内部 `connect --local-lease` 在宿主确认 `released` 并成功移除隔离标记后，输出统一成功结果 `status:released`、退出码 0；未确认释放仍返回失败并保留隔离标记。
-- 单元回归覆盖成员新增/撤销、operator 无聊天特权、ALL 企业成员确认、子部门、旧场景白名单、查询错误和发布身份冲突；Schema 检查覆盖最终绑定查询结果。
-- 真实本机 DSH → DWS → DEAP 只读验收：已发布 PARTIAL 范围内新增成员，无需本地白名单，allowed=true；宿主连接与执行器 ready，A2UI 启用。随后真实范围内成员发送新消息：access_check=accepted → task_start → 引用回复 delivered，原消息与回复处于同一会话。本次回复为模型提供方 insufficient_user_quota 错误提示；权限与回传链路通过，正常模型回答 E2E 被外部额度阻断，不能以 task_end=completed 误报模型成功。
+- `channel binding --stdin` 在启动时返回本地权威绑定及 `accessPolicy`，不接收 sender 或 conversationType，不返回 allowed。正式服务端绑定为 `platform`，无回执的本地通道为 `local_allowlist`。损坏、过期、解绑或未完成服务端操作的绑定不授权启动。
+- 平台确认：移出私聊可见范围后停止投递；群内 @ 可回复；从 local_agent 修改类型后停止旧绑定投递、需重新绑定。本地测试只验证对此投递契约的消费，不宣称模拟验证了平台行为。
+- 单元回归覆盖旧绑定缺主管字段也可租约启动、原生启动不枚举账号和查询远端、受管私聊及群 @ 不查可见范围、普通群消息和自身消息忽略、非受管通道仍执行白名单、主管历史字段不升级授权、过期 revision/解绑/损坏绑定拒绝。
+- 旧的主管字段迁移、可见范围成员解析及部门展开代码已删除。新绑定不再保存 supervisorProfile，旧字段仅兼容读取；固定 operator 审批和当前主管管理权限不变。
+- DSH 内部 `connect --local-lease` 在宿主确认 `released` 并成功移除隔离标记后输出统一成功结果 `status:released`、退出码 0；未确认释放仍失败并保留隔离标记。
+- `platform` 必须返回 `selfOpenDingTalkId` 供插件排除自身消息；新绑定从已验证的 adapter 配置读取。旧 DSH 配置缺自身 ID 时只在启动阶段用员工 Profile 查询自己一次，核对 token 精确身份并在返回前重核绑定；不要求主管登录、不写新迁移字段。回归覆盖错配 token、查询失败、旧 adapter 版本和查询期间换绑。
+- 真正钉钉业务 E2E 需要另外记录真实入站、模型执行、回复回执和 IM 读回；本轮修改前的 1010/10101 记录不代表本版本已完成现场验收。

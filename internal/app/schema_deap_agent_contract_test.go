@@ -405,17 +405,20 @@ func TestCrossPlatformCoverageEmployeeRemovedBindingCommandsAbsentFromSchema(t *
 	}
 }
 
-func TestCrossPlatformCoverageEmployeeVisibilityBindingFinalSchema(t *testing.T) {
+func TestCrossPlatformCoverageEmployeeAccessPolicyBindingFinalSchema(t *testing.T) {
 	root := NewRootCommand()
 	payload := schemaContractPayloadForBoundCanonicals(t, root, "dingtalk-tag.channel_binding")
 	tool := payload.Tools["dingtalk-tag.channel_binding"]
 	result := tool["result"].(map[string]any)
 	schema := result["data_schema"].(map[string]any)
 	properties := schema["properties"].(map[string]any)
-	for _, key := range []string{"accessPolicy", "allowed"} {
+	for _, key := range []string{"accessPolicy", "selfOpenDingTalkId"} {
 		if properties[key] == nil {
 			t.Fatalf("missing delivered %s", key)
 		}
+	}
+	if properties["allowed"] != nil {
+		t.Fatal("逐发送者可见范围判定已移除")
 	}
 	if tool["effect"] != "read" || tool["confirmation"] != "not_required" {
 		t.Fatal("binding access query must remain read only")
@@ -441,7 +444,7 @@ func TestCrossPlatformCoverageEmployeeChannelOnlyDiscoveryAndBinding(t *testing.
 	}
 	payload := schemaContractPayloadForBoundCanonicals(t, root, "dingtalk-tag.channel_capabilities", "dingtalk-tag.channel_binding")
 	raw, err := json.Marshal(payload.Tools["dingtalk-tag.channel_capabilities"]["result"])
-	if err != nil || bytes.Contains(raw, []byte("replyStdin")) || bytes.Contains(raw, []byte("operatorPrivateStdin")) || !bytes.Contains(raw, []byte("chatDelivery")) || !bytes.Contains(raw, []byte("visibilityAccess")) {
+	if err != nil || bytes.Contains(raw, []byte("replyStdin")) || bytes.Contains(raw, []byte("operatorPrivateStdin")) || !bytes.Contains(raw, []byte("chatDelivery")) || !bytes.Contains(raw, []byte("bindingAccessPolicy")) {
 		t.Fatalf("最终能力契约未同步: %s, %v", raw, err)
 	}
 	if len(payload.Tools) != 2 {

@@ -466,7 +466,8 @@ func TestCrossPlatformCoverageAcquireDualLockCanceledDuringFileAcquire(t *testin
 	if attemptedFile == nil {
 		t.Fatal("file lock attempt was not exercised")
 	}
-	if _, err := attemptedFile.Stat(); !errors.Is(err, os.ErrClosed) {
+	// Windows 对已关闭句柄的 Stat 返回系统错误；重复 Close 在各平台统一返回 ErrClosed。
+	if err := attemptedFile.Close(); !errors.Is(err, os.ErrClosed) {
 		t.Fatalf("file descriptor not closed after cancellation: %v", err)
 	}
 	if _, exists := processLocks.Load(processLockKey(configDir)); exists {

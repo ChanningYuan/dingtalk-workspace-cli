@@ -69,6 +69,7 @@ const (
 )
 
 type digitalEmployeeBinding struct {
+	// 历史字段仅用于兼容读取；聊天授权与主管审批均不依赖此字段。
 	SupervisorProfile      string `json:"supervisorProfile,omitempty"`
 	RuntimeBindingID       string `json:"runtimeBindingId,omitempty"`
 	DeviceID               string `json:"deviceId,omitempty"`
@@ -248,7 +249,7 @@ func runDeapConnect(cmd *cobra.Command, _ []string) error {
 	}
 	binding := digitalEmployeeBinding{
 		SchemaVersion: 1, AgentUUID: agentUUID, DWSProfile: digitalProfile, OperatorOpenDingTalkID: operatorID, Channel: channel,
-		BindingRevision: 1, BindingState: "bound", DesiredState: "running", SupervisorProfile: session.SupervisorProfile,
+		BindingRevision: 1, BindingState: "bound", DesiredState: "running",
 	}
 	if previous, e := loadDigitalEmployeeBinding(configDir, digitalProfile); e == nil {
 		binding.RuntimeBindingID = previous.RuntimeBindingID
@@ -261,11 +262,10 @@ func runDeapConnect(cmd *cobra.Command, _ []string) error {
 	}
 	cfg := digitalEmployeeAdapterConfig{Binding: binding, Name: findJSONScalar(draft, "name"), AlwaysOn: commandBoolFlag(cmd, "alwayson")}
 	cfg.SelfOpenDingTalkID = publishedIdentity.OpenDingTalkID
+	if !validEmployeeSelfIdentity(cfg.SelfOpenDingTalkID) {
+		return fmt.Errorf("数字员工发布详情缺少自身 openDingTalkId，无法安全过滤自发消息")
+	}
 	if channel != "dsh" {
-		cfg.SelfOpenDingTalkID = publishedIdentity.OpenDingTalkID
-		if !validMachineString(cfg.SelfOpenDingTalkID) {
-			return fmt.Errorf("数字员工发布详情缺少自身 openDingTalkId，无法安全过滤自发消息")
-		}
 		cfg.Options, err = prepareDigitalEmployeeLocal(cmd, binding, token.AccessToken)
 		if err != nil {
 			return err
@@ -356,7 +356,7 @@ func newDeapChannelCapabilitiesCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return writeDWSMachineEnvelope(cmd, map[string]any{
 				"schemaVersion": 1, "protocolVersion": 1, "channel": devAppStringFlag(cmd, "channel"), "auditMode": "local_required",
-				"capabilities": map[string]any{"eventConsume": true, "chatDelivery": true, "visibilityAccess": true, "groupMembershipAccess": true},
+				"capabilities": map[string]any{"eventConsume": true, "chatDelivery": true, "bindingAccessPolicy": true},
 			})
 		},
 		Contract: c,

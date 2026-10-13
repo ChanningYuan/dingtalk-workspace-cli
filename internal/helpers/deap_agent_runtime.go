@@ -233,7 +233,7 @@ func (r *employeeRuntime) accept(e employeeEvent) bool {
 	if !validMachineString(e.EventID) || !validMachineString(e.MessageID) || !validMachineString(e.ConversationID) || !validMachineString(e.SenderID) || strings.TrimSpace(e.Content) == "" {
 		return false
 	}
-	if r.cfg.Binding.SupervisorProfile != "" || r.cfg.Binding.RuntimeBindingID != "" {
+	if employeeBindingAccessPolicy(r.cfg.Binding) == "platform" {
 		switch e.Type {
 		case "user_im_message_receive_o2o_all", "user_im_message_receive_o2o", "user_im_message_receive_at":
 			return true
@@ -257,22 +257,6 @@ func (r *employeeRuntime) accept(e employeeEvent) bool {
 func (r *employeeRuntime) enqueue(e employeeEvent) error {
 	if !r.accept(e) {
 		return nil
-	}
-	if r.cfg.Binding.SupervisorProfile != "" || r.cfg.Binding.RuntimeBindingID != "" {
-		conversationType := "group"
-		if e.Type == "user_im_message_receive_o2o_all" || e.Type == "user_im_message_receive_o2o" {
-			conversationType = "direct"
-		}
-		policy, allowed, err := employeeConversationAccess(r.ctx, r.cfg.Binding, e.SenderID, e.SenderName, conversationType)
-		if err != nil {
-			return &employeeRunError{Code: "visibility_access_unavailable"}
-		}
-		if policy == "local_allowlist" {
-			allowed = employeeContains(r.cfg.Options.AllowedUsers, e.SenderID) && (strings.Contains(e.Type, "o2o") || employeeContains(r.cfg.Options.AllowedGroups, e.ConversationID))
-		}
-		if !allowed {
-			return nil
-		}
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -463,6 +447,9 @@ func runEmployeeWorker(parent context.Context, cfg digitalEmployeeAdapterConfig,
 	if err != nil || !sameEmployeeBinding(binding, cfg.Binding) || employeeBindingState(binding) != "bound" || employeeDesiredState(binding) != "running" {
 		return employeeTerminal("binding_not_authorized")
 	}
+	if err := checkEmployeeServerOperation(binding); err != nil {
+		return err
+	}
 	state := digitalEmployeeRunState{Status: "starting", PID: os.Getpid(), SupervisorPID: supervisorPID, AgentUUID: cfg.Binding.AgentUUID, Profile: cfg.Binding.DWSProfile, Channel: cfg.Binding.Channel, LogPath: filepath.Join(dir, "runtime.log"), UpdatedAt: time.Now()}
 	state.RunID = os.Getenv("DWS_EMPLOYEE_RUN_ID")
 	if state.RunID == "" {
@@ -484,20 +471,8 @@ func runEmployeeWorker(parent context.Context, cfg digitalEmployeeAdapterConfig,
 		state.UpdatedAt = time.Now()
 		_ = persist()
 	}()
-	// 旧绑定先迁移，失败时状态落为 blocked；不创建 Agent，也不启动事件订阅。
-	cfg.Binding, err = prepareEmployeeVisibility(ctx, binding)
-	if err != nil {
-		// stop 可在身份查询期间更新期望状态；正常停机不能写成 blocked，
-		// 否则前台 worker 已退出，stop 仍会一直等待 stopped 确认。
-		if ctx.Err() != nil {
-			return nil
-		}
-		current, loadErr := loadDigitalEmployeeBinding(deapConnectConfigDir(), binding.DWSProfile)
-		if loadErr == nil && sameEmployeeBinding(current, binding) && current.RuntimeBindingID == binding.RuntimeBindingID && current.DeviceID == binding.DeviceID && employeeDesiredState(current) == "stopped" {
-			return nil
-		}
-		return err
-	}
+	// 使用刚核验的本地绑定；受管入站权限由平台投递保证。
+	cfg.Binding = binding
 	fwd, err := digitalEmployeeNewForwarder(ctx, cfg)
 	if err != nil {
 		return employeeTerminal("agent_unavailable")
@@ -524,7 +499,7 @@ func runEmployeeWorker(parent context.Context, cfg digitalEmployeeAdapterConfig,
 	defer func() { cancel(); r.wg.Wait() }()
 	args := []string{"event", "consume", "user_im_message_receive_o2o_all"}
 	// 入群授权与响应触发独立：受管员工只订阅原生 @ 事件，普通群消息不交给模型。
-	if cfg.Binding.SupervisorProfile != "" || cfg.Binding.RuntimeBindingID != "" {
+	if employeeBindingAccessPolicy(cfg.Binding) == "platform" {
 		args = append(args, "user_im_message_receive_at")
 	} else if len(cfg.Options.AllowedGroups) > 0 {
 		args = append(args, "user_im_message_receive_group_all")

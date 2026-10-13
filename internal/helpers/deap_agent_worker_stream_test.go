@@ -87,7 +87,7 @@ func TestCrossPlatformCoverageEmployeeWorkerStreamFailures(t *testing.T) {
 			cfg.Options.AllowedGroups = []string{"group"}
 			if scenario == "group-subscription" {
 				cfg.Options.AllowedGroups = nil
-				cfg.Binding.SupervisorProfile = "corp:manager"
+				cfg.Binding.RuntimeBindingID = "server-binding"
 				if err := saveDigitalEmployeeBinding(deapConnectConfigDir(), cfg.Binding); err != nil {
 					t.Fatal(err)
 				}

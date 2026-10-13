@@ -300,7 +300,7 @@ func loadDigitalEmployeeConfig(profile string) (digitalEmployeeAdapterConfig, er
 	if err := checkEmployeeServerOperation(b); err != nil {
 		return cfg, err
 	}
-	// 主管 Profile 等运行策略只以权威绑定为准，旧 adapter 快照不覆盖迁移结果。
+	// 运行策略只以权威绑定为准，旧 adapter 快照不覆盖最新绑定。
 	cfg.Binding = b
 	return cfg, nil
 }
@@ -310,7 +310,7 @@ func digitalEmployeeResultSpec() *contract.ResultSpec {
 }
 
 func digitalEmployeeCapabilitiesResultSpec() *contract.ResultSpec {
-	return &contract.ResultSpec{Outcomes: []contract.ResultOutcome{"success"}, DataSchema: json.RawMessage(`{"type":"object","properties":{"schemaVersion":{"type":"integer","description":"输入 Schema 版本"},"protocolVersion":{"type":"integer","description":"机器协议版本"},"channel":{"type":"string","description":"Adapter 类型"},"auditMode":{"type":"string","description":"审计要求"},"capabilities":{"type":"object","description":"支持的协议操作","properties":{"eventConsume":{"type":"boolean","description":"支持 Event Consumer"},"chatDelivery":{"type":"boolean","description":"通用 chat 支持 stdin、员工上下文和统一发送回执"},"visibilityAccess":{"type":"boolean","description":"支持绑定查询的访问判定"},"groupMembershipAccess":{"type":"boolean","description":"支持 conversationType 区分 local_agent 已入群授权与私聊可见范围"}}}}}`)}
+	return &contract.ResultSpec{Outcomes: []contract.ResultOutcome{"success"}, DataSchema: json.RawMessage(`{"type":"object","properties":{"schemaVersion":{"type":"integer","description":"输入 Schema 版本"},"protocolVersion":{"type":"integer","description":"机器协议版本"},"channel":{"type":"string","description":"Adapter 类型"},"auditMode":{"type":"string","description":"审计要求"},"capabilities":{"type":"object","description":"支持的协议操作","properties":{"eventConsume":{"type":"boolean","description":"支持 Event Consumer"},"chatDelivery":{"type":"boolean","description":"通用 chat 支持 stdin、员工上下文和统一发送回执"},"bindingAccessPolicy":{"type":"boolean","description":"绑定查询始终返回 platform 或 local_allowlist 访问策略；入站不再查询远端可见范围"}}}}}`)}
 }
 
 func newDigitalEmployeeStatusCommand() *cobra.Command {

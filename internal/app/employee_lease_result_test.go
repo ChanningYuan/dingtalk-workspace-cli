@@ -44,7 +44,7 @@ func TestCrossPlatformCoverageEmployeeLeaseFinalRootResult(t *testing.T) {
 				"schemaVersion": 1, "agentUuid": agentUUID, "dwsProfile": profile,
 				"operatorOpenDingTalkId": "lease-operator", "channel": "dsh",
 				"bindingRevision": 3, "bindingState": "bound", "desiredState": "running",
-				"runtimeBindingId": "lease-binding", "supervisorProfile": "manager-corp:manager-user",
+				"runtimeBindingId": "lease-binding",
 			}
 			raw, err := json.Marshal(binding)
 			if err != nil {

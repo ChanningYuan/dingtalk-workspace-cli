@@ -186,10 +186,9 @@ func TestCrossPlatformCoverageDingTalkTagChannelCapabilitiesUsesDWSMachineEnvelo
 			ProtocolVersion int    `json:"protocolVersion"`
 			AuditMode       string `json:"auditMode"`
 			Capabilities    struct {
-				EventConsume          bool `json:"eventConsume"`
-				ChatDelivery          bool `json:"chatDelivery"`
-				VisibilityAccess      bool `json:"visibilityAccess"`
-				GroupMembershipAccess bool `json:"groupMembershipAccess"`
+				EventConsume        bool `json:"eventConsume"`
+				ChatDelivery        bool `json:"chatDelivery"`
+				BindingAccessPolicy bool `json:"bindingAccessPolicy"`
 			} `json:"capabilities"`
 		} `json:"data"`
 	}
@@ -197,7 +196,7 @@ func TestCrossPlatformCoverageDingTalkTagChannelCapabilitiesUsesDWSMachineEnvelo
 		t.Fatalf("decode output %q: %v", output.String(), err)
 	}
 	if !envelope.OK || envelope.Outcome != "success" || envelope.Data.ProtocolVersion != 1 || envelope.Data.AuditMode != "local_required" ||
-		!envelope.Data.Capabilities.EventConsume || !envelope.Data.Capabilities.ChatDelivery || !envelope.Data.Capabilities.VisibilityAccess || !envelope.Data.Capabilities.GroupMembershipAccess {
+		!envelope.Data.Capabilities.EventConsume || !envelope.Data.Capabilities.ChatDelivery || !envelope.Data.Capabilities.BindingAccessPolicy {
 		t.Fatalf("capability envelope = %#v", envelope)
 	}
 }
@@ -475,7 +474,7 @@ func newSuccessfulConnectCaller(authResponse, contactResponse string) *digitalEm
 		"deap-dev/bind_local_agent": {`{"success":true,"data":"binding-created"}`},
 		"deap-dev/get_digital_employee_detail": {
 			`{"success":true,"data":{"name":"本地员工","type":"local_agent"}}`,
-			`{"success":true,"data":{"status":"online","profile":{"corpId":"employee-corp","userId":"employee-user"}}}`,
+			`{"success":true,"data":{"status":"online","profile":{"corpId":"employee-corp","userId":"employee-user","openDingTalkId":"employee-self"}}}`,
 		},
 		"deap-dev/get_dws_auth_code":         {authResponse},
 		"contact/search_contact_by_key_word": {contactResponse},
@@ -555,7 +554,7 @@ func TestCrossPlatformCoverageDingTalkTagConnectKeepsSupervisorCurrentAndUsesRet
 		"deap-dev/bind_local_agent": {`{"success":true,"data":"binding-created"}`},
 		"deap-dev/get_digital_employee_detail": {
 			`{"success":true,"data":{"name":"本地员工","digitalTagEmployeeProfile":{"mainProgramType":"local_agent"}}}`,
-			`{"success":true,"data":{"status":"online","profile":{"corpId":"employee-corp","userId":"employee-user"}}}`,
+			`{"success":true,"data":{"status":"online","profile":{"corpId":"employee-corp","userId":"employee-user","openDingTalkId":"employee-self"}}}`,
 		},
 		"deap-dev/get_dws_auth_code":         {`{"success":true,"data":{"dwsClientId":"returned-client","dwsAuthCode":"one-time-secret"}}`},
 		"contact/search_contact_by_key_word": {`{"result":[{"userId":"supervisor-user","openDingTalkId":"operator-supervisor-scope"}]}`},

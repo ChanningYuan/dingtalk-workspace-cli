@@ -89,13 +89,9 @@ func updateEmployeeBinding(b digitalEmployeeBinding) error {
 		return err
 	}
 	defer lock.Release()
-	current, err := loadDigitalEmployeeBinding(deapConnectConfigDir(), b.DWSProfile)
+	_, err = loadDigitalEmployeeBinding(deapConnectConfigDir(), b.DWSProfile)
 	if err != nil && !os.IsNotExist(err) {
 		return err
-	}
-	// stop 等操作可能在启动迁移之前读过旧快照；保留同一绑定刚验证出的主管身份。
-	if err == nil && sameEmployeeBinding(current, b) && current.RuntimeBindingID == b.RuntimeBindingID && current.DeviceID == b.DeviceID && b.SupervisorProfile == "" {
-		b.SupervisorProfile = current.SupervisorProfile
 	}
 	return writeEmployeeJSON(digitalEmployeeBindingPath(deapConnectConfigDir(), b.DWSProfile), b)
 }
@@ -261,25 +257,22 @@ func validateEmployeeMachineRevision(cmd *cobra.Command, id string, revision uin
 		return err
 	}
 	b, err := deapChannelLoadBinding(deapConnectConfigDir(), auth.RuntimeProfile())
-	if err != nil || b.BindingRevision != revision || employeeBindingState(b) == "unbound" {
+	if err != nil || b.BindingRevision != revision || employeeBindingState(b) != "bound" {
 		return fmt.Errorf("employee binding revision is no longer authorized")
 	}
 	return nil
 }
 
 func newEmployeeBindingCommand() *cobra.Command {
-	c := digitalEmployeeChannelContract("channel_binding", "binding", "读取数字员工权威绑定；可选传入发送者，按已发布 DEAP 范围返回访问判定。", "DSH 启动员工之前核验绑定版本与运行期望")
-	c.Result = &contract.ResultSpec{Outcomes: []contract.ResultOutcome{"success"}, DataSchema: json.RawMessage(`{"type":"object","properties":{"agentUuid":{"type":"string","description":"员工 ID"},"dwsProfile":{"type":"string","description":"精确员工 Profile"},"channel":{"type":"string","description":"绑定 Adapter"},"bindingRevision":{"type":"integer","description":"绑定代数"},"bindingState":{"type":"string","description":"绑定状态"},"desiredState":{"type":"string","description":"运行期望"},"accessPolicy":{"type":"string","description":"访问权威：deap_visibility 或 local_allowlist"},"allowed":{"type":"boolean","description":"DEAP 对指定发送者的访问判定；本地白名单策略不返回"}}}`)}
+	c := digitalEmployeeChannelContract("channel_binding", "binding", "读取数字员工权威绑定与访问策略；受管 local_agent 由平台投递授权，其他通道使用本地白名单。", "DSH 启动员工之前核验绑定版本、运行期望与访问策略")
+	c.Result = &contract.ResultSpec{Outcomes: []contract.ResultOutcome{"success"}, DataSchema: json.RawMessage(`{"type":"object","properties":{"agentUuid":{"type":"string","description":"员工 ID"},"dwsProfile":{"type":"string","description":"精确员工 Profile"},"channel":{"type":"string","description":"绑定 Adapter"},"bindingRevision":{"type":"integer","description":"绑定代数"},"bindingState":{"type":"string","description":"绑定状态"},"desiredState":{"type":"string","description":"运行期望"},"selfOpenDingTalkId":{"type":"string","description":"员工自身开放 ID，用于过滤自消息；platform 策略必有"},"accessPolicy":{"type":"string","enum":["platform","local_allowlist"],"description":"入站访问权威：platform 为正式服务端绑定，由平台控制私聊投递及群内 @；local_allowlist 为其他本地通道"}}}`)}
 	return NewLeafCommand(LeafSpec{Use: "binding", Short: "读取员工绑定权威状态", PostMount: deapAgentNoArgs, OutputRollout: output.RolloutUnifiedActive,
-		Flags:  []LeafFlag{{Name: "channel", Required: true, Enum: digitalEmployeeChannels(), Usage: "绑定 Adapter"}, {Name: "stdin", Kind: LeafBool, Required: true, Usage: "JSON：agentUuid、bindingRevision；可选 senderOpenDingTalkId、senderName、conversationType（direct/group，默认 direct）查询访问权限"}},
+		Flags:  []LeafFlag{{Name: "channel", Required: true, Enum: digitalEmployeeChannels(), Usage: "绑定 Adapter"}, {Name: "stdin", Kind: LeafBool, Required: true, Usage: "JSON：agentUuid、bindingRevision；返回本地绑定及访问策略，不查询远端可见范围"}},
 		Safety: contract.SafetySpec{Effect: "read", Risk: "low", Confirmation: "not_required", Idempotency: "idempotent"}, Contract: c,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var in struct {
-				AgentUUID        string `json:"agentUuid"`
-				BindingRevision  uint64 `json:"bindingRevision"`
-				SenderID         string `json:"senderOpenDingTalkId,omitempty"`
-				SenderName       string `json:"senderName,omitempty"`
-				ConversationType string `json:"conversationType,omitempty"`
+				AgentUUID       string `json:"agentUuid"`
+				BindingRevision uint64 `json:"bindingRevision"`
 			}
 			if err := decodeBoundedDigitalEmployeeStdin(cmd, &in); err != nil {
 				return err
@@ -291,27 +284,28 @@ func newEmployeeBindingCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result := map[string]any{"agentUuid": b.AgentUUID, "dwsProfile": b.DWSProfile, "channel": bindingChannel(b), "bindingRevision": b.BindingRevision, "bindingState": employeeBindingState(b), "desiredState": employeeDesiredState(b)}
-			if in.SenderID != "" {
-				conversationType := in.ConversationType
-				if conversationType == "" {
-					conversationType = "direct"
-				}
-				policy, allowed, err := employeeConversationAccess(cmd.Context(), b, in.SenderID, in.SenderName, conversationType)
-				if err != nil {
-					return err
-				}
-				if err := validateEmployeeMachineRevision(cmd, in.AgentUUID, in.BindingRevision); err != nil {
-					return err
-				}
-				current, err := deapChannelLoadBinding(deapConnectConfigDir(), auth.RuntimeProfile())
-				if err != nil || employeeDesiredState(current) != "running" {
-					return fmt.Errorf("binding_not_running")
-				}
-				result["accessPolicy"] = policy
-				if policy == "deap_visibility" {
-					result["allowed"] = allowed
-				}
+			if b.AgentUUID != in.AgentUUID || b.DWSProfile != auth.RuntimeProfile() || bindingChannel(b) != devAppStringFlag(cmd, "channel") || b.BindingRevision != in.BindingRevision || employeeBindingState(b) != "bound" {
+				return fmt.Errorf("employee binding revision is no longer authorized")
+			}
+			if err := checkEmployeeServerOperation(b); err != nil {
+				return err
+			}
+			policy := employeeBindingAccessPolicy(b)
+			selfID, err := employeeBindingSelfIdentity(cmd.Context(), b, policy == "platform")
+			if err != nil {
+				return err
+			}
+			// 自身份初始化可能访问员工自己的通讯录；返回前重新核对整个绑定。
+			current, err := deapChannelLoadBinding(deapConnectConfigDir(), auth.RuntimeProfile())
+			if err != nil || current != b {
+				return fmt.Errorf("employee binding changed during identity initialization")
+			}
+			if err := checkEmployeeServerOperation(current); err != nil {
+				return err
+			}
+			result := map[string]any{"agentUuid": b.AgentUUID, "dwsProfile": b.DWSProfile, "channel": bindingChannel(b), "bindingRevision": b.BindingRevision, "bindingState": employeeBindingState(b), "desiredState": employeeDesiredState(b), "accessPolicy": policy}
+			if selfID != "" {
+				result["selfOpenDingTalkId"] = selfID
 			}
 			return writeDWSMachineEnvelope(cmd, result)
 		},
