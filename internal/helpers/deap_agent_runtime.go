@@ -484,6 +484,20 @@ func runEmployeeWorker(parent context.Context, cfg digitalEmployeeAdapterConfig,
 		state.UpdatedAt = time.Now()
 		_ = persist()
 	}()
+	// 旧绑定先迁移，失败时状态落为 blocked；不创建 Agent，也不启动事件订阅。
+	cfg.Binding, err = prepareEmployeeVisibility(ctx, binding)
+	if err != nil {
+		// stop 可在身份查询期间更新期望状态；正常停机不能写成 blocked，
+		// 否则前台 worker 已退出，stop 仍会一直等待 stopped 确认。
+		if ctx.Err() != nil {
+			return nil
+		}
+		current, loadErr := loadDigitalEmployeeBinding(deapConnectConfigDir(), binding.DWSProfile)
+		if loadErr == nil && sameEmployeeBinding(current, binding) && current.RuntimeBindingID == binding.RuntimeBindingID && current.DeviceID == binding.DeviceID && employeeDesiredState(current) == "stopped" {
+			return nil
+		}
+		return err
+	}
 	fwd, err := digitalEmployeeNewForwarder(ctx, cfg)
 	if err != nil {
 		return employeeTerminal("agent_unavailable")

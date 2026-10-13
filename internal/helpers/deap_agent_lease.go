@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
-	"time"
 )
 
 // DSH 与原生 worker 使用同一把本机 Profile 锁。stdin 由宿主持有，只有
@@ -31,7 +30,8 @@ func runEmployeeLease(cmd *cobra.Command) error {
 	if err != nil || profile == "" || instanceErr != nil {
 		return fmt.Errorf("invalid lease identity")
 	}
-	waitCtx, stopWait := context.WithTimeout(ctx, 10*time.Second)
+	// 获取 worker 锁与旧绑定迁移共用预算，必须早于宿主的 12 秒租约看门狗结束。
+	waitCtx, stopWait := context.WithTimeout(ctx, employeeVisibilityStartupTimeout)
 	defer stopWait()
 	lock, err := auth.AcquireDualLock(waitCtx, filepath.Join(digitalEmployeeRuntimeDir(profile), "worker"))
 	if err != nil {
@@ -47,6 +47,10 @@ func runEmployeeLease(cmd *cobra.Command) error {
 	}
 	if err := checkEmployeeServerOperation(b); err != nil {
 		return err
+	}
+	b, err = prepareEmployeeVisibility(waitCtx, b)
+	if err != nil {
+		return employeeVisibilityStartupError(err)
 	}
 	// 锁进程异常退出后仍保留隔离标记；文件锁消失不是旧宿主已释放的证明。
 	guard := employeeLeaseGuard{AgentUUID: b.AgentUUID, Revision: revision, InstanceID: instance}

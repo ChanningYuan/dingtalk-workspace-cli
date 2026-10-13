@@ -65,7 +65,9 @@ connect 使用主管取得一次性授权码，严格使用返回的 Client ID �
 
 `manage create` 创建并通过 connect 绑定的 `local_agent`，聊天权限以 DEAP 已发布可见范围为准：`manage set-visibility` 保存草稿后仍需 publish。每条入站消息重新查询 published，成员范围使用员工身份精确转换开放 ID，ALL 必须确认本企业成员，部门范围包含子部门（遍历最多 256 个部门，超限或查询失败拒绝处理）。私聊按发送者校验；local_agent 已被拉入群即视为群内可见，群消息不再叠加个人可见范围或本地用户/群白名单。受管员工只订阅原生 @ 当前员工的消息，普通群消息不进入模型；入队前核实已发布身份、类型与在线状态；operator 不绕过聊天权限，但敏感操作审批仍只接受绑定 operator。
 
-绑定固定保存管理账号 Profile，不受全局 current 切换影响。旧服务端绑定使用原管理账号执行 connect restart 迁移；缺管理账号、身份冲突或查询失败时停止授权，不回退本地白名单。`channel binding --stdin` 可选接收 senderOpenDingTalkId、senderName、conversationType（direct/group，省略为 direct），返回 accessPolicy 和 DEAP allowed 判定；Adapter 仅在 capabilities.groupMembershipAccess=true 时发送 conversationType，以兼容旧 DWS；仅有本地配置的旧通道、非 local_agent 和机器人继续采用本地白名单。名称仅作检索提示，必须精确匹配开放 ID 并确认企业成员身份，绝不按同名放行。
+绑定固定保存管理账号 Profile，不受全局 current 切换影响。已有 runtimeBindingId、缺少 supervisorProfile 的旧绑定在 DSH 租约或原生 worker 启动前自动迁移：从本机精确 Profile 中唯一匹配绑定中保存的原 operator，再用该主管身份核对 published 员工身份，成功落盘后才启动 Agent 和事件订阅。查询和迁移锁等待受 10 秒启动预算约束；并发停止或换绑时不覆盖绑定。缺管理账号、匹配歧义、身份冲突、查询失败或保存失败都会阻止启动，输出稳定的 visibility_* 原因；以已登录的原管理账号精确 Profile 执行 connect restart 可显式恢复，不回退本地白名单。
+
+`channel binding --stdin` 保持只读，可选接收 senderOpenDingTalkId、senderName、conversationType（direct/group，省略为 direct），返回 accessPolicy 和 DEAP allowed 判定；Adapter 仅在 capabilities.groupMembershipAccess=true 时发送 conversationType，以兼容旧 DWS；仅有本地配置的旧通道、非 local_agent 和机器人继续采用本地白名单。名称仅作检索提示，必须精确匹配开放 ID 并确认企业成员身份，绝不按同名放行。
 
 不同 Adapter 的已有绑定返回冲突，不隐式替换 DSH。
 

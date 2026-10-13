@@ -84,6 +84,19 @@ func (w *employeeControlWriter) Write(p []byte) (int, error) {
 }
 
 func updateEmployeeBinding(b digitalEmployeeBinding) error {
+	lock, err := auth.AcquireDualLock(context.Background(), employeeBindingLockPath(b.DWSProfile))
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	current, err := loadDigitalEmployeeBinding(deapConnectConfigDir(), b.DWSProfile)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	// stop 等操作可能在启动迁移之前读过旧快照；保留同一绑定刚验证出的主管身份。
+	if err == nil && sameEmployeeBinding(current, b) && current.RuntimeBindingID == b.RuntimeBindingID && current.DeviceID == b.DeviceID && b.SupervisorProfile == "" {
+		b.SupervisorProfile = current.SupervisorProfile
+	}
 	return writeEmployeeJSON(digitalEmployeeBindingPath(deapConnectConfigDir(), b.DWSProfile), b)
 }
 

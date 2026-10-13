@@ -18,7 +18,12 @@ import (
 )
 
 func TestCrossPlatformCoverageEmployeeLeaseHoldsTheSameProfileLockUntilStdinCloses(t *testing.T) {
-	_, b := lifecycleFixture(t)
+	dir, b := lifecycleFixture(t)
+	// 本用例只验证租约锁，升级迁移由独立测试覆盖。
+	b.SupervisorProfile = "corp:manager"
+	if err := saveDigitalEmployeeBinding(dir, b); err != nil {
+		t.Fatal(err)
+	}
 	auth.SetRuntimeProfile(b.DWSProfile)
 	t.Cleanup(func() { auth.SetRuntimeProfile("") })
 	cmd := newDeapConnectCommand()
