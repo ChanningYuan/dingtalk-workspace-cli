@@ -157,7 +157,13 @@ func newDeapConnectCommand() *cobra.Command {
 
 func runDeapConnect(cmd *cobra.Command, _ []string) error {
 	if commandBoolFlag(cmd, "local-lease") {
-		return runEmployeeLease(cmd)
+		if err := runEmployeeLease(cmd); err != nil {
+			return err
+		}
+		return writeDWSMachineEnvelope(cmd, map[string]any{
+			"status": "released", "agentUuid": devAppStringFlag(cmd, "agent-uuid"),
+			"dwsProfile": auth.RuntimeProfile(), "channel": "dsh",
+		})
 	}
 	agentUUID := strings.TrimSpace(MustGetStringFlag(cmd, "agent-uuid"))
 	channel := strings.TrimSpace(MustGetStringFlag(cmd, "channel"))

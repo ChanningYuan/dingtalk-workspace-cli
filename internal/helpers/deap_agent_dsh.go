@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -16,6 +17,18 @@ import (
 )
 
 func resolveExactOperatorOpenDingTalkID(ctx context.Context, accessToken, userID string) (string, error) {
+	operator, err := resolveOptionalExactOperatorOpenDingTalkID(ctx, accessToken, userID)
+	if err != nil {
+		return "", err
+	}
+	if operator == "" {
+		return "", apperrors.NewValidation("主管 userId 未能精确解析出唯一 operatorOpenDingTalkId；禁止按姓名猜测或手工覆盖")
+	}
+	return operator, nil
+}
+
+// 仅旧绑定迁移可将已验证的明确空结果作为非候选；连接仍要求唯一主管。
+func resolveOptionalExactOperatorOpenDingTalkID(ctx context.Context, accessToken, userID string) (string, error) {
 	// get_user_info_by_user_ids 的真实响应只包含组织资料，不提供 openDingTalkId。
 	// openDingTalkId 取决于调用 Token 对应的应用/身份上下文，因此必须使用
 	// 数字员工 Access Token 查询主管，才能与该员工收到的事件发送者 ID 保持一致。
@@ -33,6 +46,7 @@ func resolveExactOperatorOpenDingTalkID(ctx context.Context, accessToken, userID
 		return "", fmt.Errorf("resolve supervisor operator identity failed")
 	}
 	var response map[string]any
+	var responseText string
 	for _, content := range result.Content {
 		if content.Type != "text" || strings.TrimSpace(content.Text) == "" {
 			continue
@@ -44,6 +58,7 @@ func resolveExactOperatorOpenDingTalkID(ctx context.Context, accessToken, userID
 		if success, exists := response["success"].(bool); exists && !success {
 			return "", fmt.Errorf("resolve supervisor operator identity was rejected")
 		}
+		responseText = content.Text
 		break
 	}
 	if response == nil {
@@ -51,6 +66,9 @@ func resolveExactOperatorOpenDingTalkID(ctx context.Context, accessToken, userID
 	}
 	candidates := map[string]struct{}{}
 	collectExactOpenDingTalkIDs(response, userID, candidates)
+	if len(candidates) == 0 && len(result.Content) == 1 && explicitEmptyOperatorSearch(response, responseText) {
+		return "", nil
+	}
 	if len(candidates) != 1 {
 		return "", apperrors.NewValidation("主管 userId 未能精确解析出唯一 operatorOpenDingTalkId；禁止按姓名猜测或手工覆盖")
 	}
@@ -59,6 +77,36 @@ func resolveExactOperatorOpenDingTalkID(ctx context.Context, accessToken, userID
 	for candidate = range candidates {
 	}
 	return candidate, nil
+}
+
+// 真实空查询只有 success:true 和 result:[]；未知元数据不能作为完整性证据。
+func explicitEmptyOperatorSearch(response map[string]any, raw string) bool {
+	rows, ok := response["result"].([]any)
+	if len(response) != 2 || response["success"] != true || !ok || len(rows) != 0 {
+		return false
+	}
+	// 拒绝重复字段与尾随 JSON，避免宽松解码把错误/截断信息覆盖成空结果。
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return false
+	}
+	seen := make(map[string]bool, 2)
+	for decoder.More() {
+		key, err := decoder.Token()
+		name, ok := key.(string)
+		if err != nil || !ok || seen[name] {
+			return false
+		}
+		seen[name] = true
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return false
+		}
+	}
+	if _, err := decoder.Token(); err != nil {
+		return false
+	}
+	return decoder.Decode(new(any)) == io.EOF
 }
 
 func collectExactOpenDingTalkIDs(value any, targetUserID string, candidates map[string]struct{}) {

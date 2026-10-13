@@ -29,6 +29,8 @@ DWS_JOINT_BINARY=/absolute/path/to/built/dws node --test test/digital-employee-c
 
 - DWS 使用绑定的管理 Profile 查询 published；以员工 Profile 精确匹配消息发送者开放 ID。ALL 需确认企业成员，PARTIAL 支持成员及部门子树；部门遍历最多 256 个节点，查询失败或超限拒绝处理。
 - `channel capabilities.visibilityAccess` 声明能力；`channel binding --stdin` 增加可选 senderOpenDingTalkId / senderName，返回 accessPolicy，DEAP 策略同时返回 allowed。名称仅用于检索，开放 ID 必须精确匹配。
-- 内置 Agent 和 DSH 均在任务调度前判断；拒绝不启动 Agent，查询失败不写事件去重。旧绑定通过原管理 Profile 的 connect restart 迁移，不能用其他账号接管。
+- 内置 Agent 和 DSH 均在任务调度前判断；拒绝不启动 Agent，查询失败不写事件去重。旧受管绑定在升级后的普通启动阶段迁移，必须从本机精确 Profile 中确认唯一原主管并核验 published 身份；失败阻止启动，可通过原管理 Profile 的 connect restart 恢复，不能用其他账号接管。
+- 迁移枚举遇到已验证的明确空查询（单个完整 JSON 文本块，仅含 `success:true` 和 `result:[]`）时继续检查其他候选；RPC 错误、畸形结果、附加错误/分页/截断信息及多重精确身份仍拒绝迁移。总预算保持 10 秒，普通 connect 仍必须解析出唯一主管。
+- DSH 的内部 `connect --local-lease` 在宿主确认 `released` 并成功移除隔离标记后，输出统一成功结果 `status:released`、退出码 0；未确认释放仍返回失败并保留隔离标记。
 - 单元回归覆盖成员新增/撤销、operator 无聊天特权、ALL 企业成员确认、子部门、旧场景白名单、查询错误和发布身份冲突；Schema 检查覆盖最终绑定查询结果。
 - 真实本机 DSH → DWS → DEAP 只读验收：已发布 PARTIAL 范围内新增成员，无需本地白名单，allowed=true；宿主连接与执行器 ready，A2UI 启用。随后真实范围内成员发送新消息：access_check=accepted → task_start → 引用回复 delivered，原消息与回复处于同一会话。本次回复为模型提供方 insufficient_user_quota 错误提示；权限与回传链路通过，正常模型回答 E2E 被外部额度阻断，不能以 task_end=completed 误报模型成功。

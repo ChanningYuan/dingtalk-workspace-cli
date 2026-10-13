@@ -70,12 +70,12 @@ func prepareEmployeeVisibility(parent context.Context, b digitalEmployeeBinding)
 		if ctx.Err() != nil {
 			return fail("visibility_migration_timeout")
 		}
-		operator, err := resolveExactOperatorOpenDingTalkID(ctx, employee.AccessToken, candidates[selector])
+		operator, err := resolveOptionalExactOperatorOpenDingTalkID(ctx, employee.AccessToken, candidates[selector])
 		if err != nil {
 			// 候选查询不完整时不能断言唯一；留给原主管显式 restart 恢复。
 			return fail("visibility_supervisor_unavailable")
 		}
-		if operator != b.OperatorOpenDingTalkID {
+		if operator == "" || operator != b.OperatorOpenDingTalkID {
 			continue
 		}
 		if matched != "" {
