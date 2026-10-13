@@ -30,6 +30,12 @@ func TestCrossPlatformCoverageEmployeeReceiptRetryBoundaryAndPrivacy(t *testing.
 		err                error
 		wantRetry          bool
 	}{
+		{"receipt code 1001", "im", "query_message_send_status", receipt1001Error(), true},
+		{"wrapped code 1001", "im", "query_message_send_status", fmt.Errorf("private-wrapper: %w", receipt1001Error()), true},
+		{"send code 1001 must not retry", "chat", "send_personal_message", receipt1001Error(), false},
+		{"lookup code 1001 must not retry", "im", "list_messages_by_ids", receipt1001Error(), false},
+		{"other server code", "im", "query_message_send_status", apperrors.NewAPI("private-diagnostics", apperrors.WithServerDiag(apperrors.ServerDiagnostics{ServerErrorCode: "1002"})), false},
+		{"unstructured code 1001", "im", "query_message_send_status", errors.New("1001 private-diagnostics"), false},
 		{"exact receipt", "im", "query_message_send_status", receiptNotVisibleError(), true},
 		{"wrapped receipt", "im", "query_message_send_status", fmt.Errorf("private-wrapper: %w", receiptNotVisibleError()), true},
 		{"structured detail", "im", "query_message_send_status", apperrors.NewAPI("private-diagnostics", apperrors.WithServerDiag(apperrors.ServerDiagnostics{ServerErrorCode: "PARAM_ERROR", TechnicalDetail: "消息不存在"})), true},

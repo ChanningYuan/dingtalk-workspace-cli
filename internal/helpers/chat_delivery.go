@@ -53,26 +53,43 @@ func ResolveChatDelivery(ctx context.Context, sendResult map[string]any, convers
 	if taskID == "" {
 		return nil, apperrors.NewInternal("数字员工发送响应缺少 openMessageId 和 openTaskId，无法确认投递结果")
 	}
+	// 整段查询共用 2 秒预算，包含请求耗时；重试不能重置截止时间。
+	receiptCtx, cancel := context.WithTimeout(ctx, digitalEmployeeReceiptTimeout)
+	defer cancel()
 	for attempt := 0; attempt < digitalEmployeeReceiptAttempts; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+		if receiptCtx.Err() != nil {
+			break
 		}
 		if attempt > 0 {
-			if err := deapChannelReceiptWait(ctx, digitalEmployeeReceiptInterval); err != nil {
+			if err := deapChannelReceiptWait(receiptCtx, digitalEmployeeReceiptInterval); err != nil {
+				if receiptCtx.Err() != nil {
+					break
+				}
 				return nil, err
 			}
 		}
-		status, err := callMachineMCPJSON(ctx, "im", "query_message_send_status", map[string]any{"openTaskId": taskID})
-		if errors.Is(err, errEmployeeReceiptNotVisible) {
-			continue
+		// 等待结束与 deadline 同时就绪时，也不能在窗口外发起查询。
+		if receiptCtx.Err() != nil {
+			break
 		}
+		status, err := callMachineMCPJSON(receiptCtx, "im", "query_message_send_status", map[string]any{"openTaskId": taskID})
 		if err != nil {
+			if receiptCtx.Err() != nil {
+				break
+			}
+			if errors.Is(err, errEmployeeReceiptNotVisible) {
+				continue
+			}
 			return nil, fmt.Errorf("query digital employee message status: %w", err)
 		}
 		delivery = chatDeliveryResult(status, conversationID, idempotencyKey)
 		if strings.TrimSpace(jsonScalar(delivery["openMessageId"])) != "" {
 			return delivery, nil
 		}
+	}
+	// 保留调用方取消或更短 deadline；本地预算耗尽只表示送达状态未知。
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return nil, apperrors.NewInternal("数字员工发送任务未在有限等待时间内返回 openMessageId，投递状态未知，请勿重新发送",
 		apperrors.WithReason("delivery_unknown"), apperrors.WithRetryable(false),

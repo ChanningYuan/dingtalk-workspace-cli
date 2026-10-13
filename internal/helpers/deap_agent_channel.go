@@ -65,6 +65,7 @@ var (
 const (
 	digitalEmployeeReceiptAttempts = 8
 	digitalEmployeeReceiptInterval = 250 * time.Millisecond
+	digitalEmployeeReceiptTimeout  = 2 * time.Second
 )
 
 type digitalEmployeeBinding struct {

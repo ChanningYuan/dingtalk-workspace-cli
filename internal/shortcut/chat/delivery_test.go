@@ -9,11 +9,61 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/DingTalk-Real-AI/dingtalk-workspace-cli/internal/auth"
 	"github.com/DingTalk-Real-AI/dingtalk-workspace-cli/internal/corecmd"
+	apperrors "github.com/DingTalk-Real-AI/dingtalk-workspace-cli/internal/errors"
 	"github.com/DingTalk-Real-AI/dingtalk-workspace-cli/internal/helpers"
 )
+
+func TestCrossPlatformCoverageChatDelivery1001RetriesOnlyReceipt(t *testing.T) {
+	for _, leaf := range []string{"+messages-reply", "+messages-send"} {
+		t.Run(leaf, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				fake := &larkAlignmentCaller{
+					responses: map[string]string{
+						"im/list_messages_by_ids":      `{"result":[{"openMessageId":"msg","openConversationId":"cid","senderOpenDingTalkId":"D-sender"}]}`,
+						"chat/send_personal_message":   `{"openTaskId":"task"}`,
+						"im/query_message_send_status": `{"openMessageId":"sent","openConversationId":"cid","sendStatus":"SUCCESS"}`,
+					},
+					failProductToolAt: map[string]int{"im/query_message_send_status": 1},
+					failProductAtCause: map[string]error{"im/query_message_send_status": apperrors.NewAPI("private-diagnostics", apperrors.WithServerDiag(apperrors.ServerDiagnostics{
+						ServerErrorCode: "1001",
+					}))},
+				}
+				helpers.InitDepsForTest(t, fake)
+				root := newPlatformCoverageRoot()
+				var out bytes.Buffer
+				root.SetOut(&out)
+				root.SetErr(&bytes.Buffer{})
+				args := []string{"chat", leaf, "--group", "cid", "--idempotency-key", "key", "--wait-delivery", "--yes"}
+				if leaf == "+messages-reply" {
+					args = append(args, "--message-id", "msg", "--content", "正文")
+				} else {
+					args = append(args, "--text", "正文")
+				}
+				root.SetArgs(args)
+				start := time.Now()
+				if err := corecmd.ExecuteForTest(root); err != nil {
+					t.Fatal(err)
+				}
+				if fake.callCounts["chat/send_personal_message"] != 1 || fake.callCounts["im/query_message_send_status"] != 2 {
+					t.Fatalf("重试必须只查询原任务: %v", fake.callCounts)
+				}
+				for _, call := range fake.calls {
+					if call.tool == "query_message_send_status" && call.args["openTaskId"] != "task" {
+						t.Fatal("重试改变了发送任务")
+					}
+				}
+				if time.Since(start) != 250*time.Millisecond || !strings.Contains(out.String(), `"delivered"`) || strings.Contains(out.String(), "private-diagnostics") {
+					t.Fatalf("回执间隔或结果异常: elapsed=%v output=%s", time.Since(start), out.String())
+				}
+			})
+		})
+	}
+}
 
 func TestCrossPlatformCoverageChatDeliveryBodyAndReceipt(t *testing.T) {
 	for _, leaf := range []string{"+messages-reply", "+messages-send"} {
