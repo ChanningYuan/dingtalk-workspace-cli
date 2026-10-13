@@ -861,6 +861,9 @@ func checkCompatibility(baseline, current schemaContract) []string {
 	for productID, oldProduct := range baseline.Products {
 		newProduct, ok := current.Products[productID]
 		if !ok {
+			if productID == "recruit" && reviewedRecruitSchemaRetirement(oldProduct, current) {
+				continue
+			}
 			failures = append(failures, fmt.Sprintf("historical schema product %q is missing", productID))
 			continue
 		}
@@ -876,6 +879,26 @@ func checkCompatibility(baseline, current schemaContract) []string {
 	}
 	sort.Strings(failures)
 	return failures
+}
+
+// 仅接受 #1485 的整个产品退役；工具移动到其他产品不属于退役。
+func reviewedRecruitSchemaRetirement(baseline productSchema, current schemaContract) bool {
+	if len(baseline.Tools) != 3 {
+		return false
+	}
+	for toolID, tool := range baseline.Tools {
+		if !interfacesnapshot.IsReviewedRecruitTool(toolID, tool.PrimaryCLIPath) {
+			return false
+		}
+	}
+	for _, product := range current.Products {
+		for toolID, tool := range product.Tools {
+			if strings.HasPrefix(toolID, "recruit.") || tool.PrimaryCLIPath == "recruit" || strings.HasPrefix(tool.PrimaryCLIPath, "recruit ") {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func checkToolCompatibility(toolPath string, oldTool, newTool toolSchema) []string {
@@ -1100,6 +1123,13 @@ var reviewedAvailabilityInterfaceRetirements = map[string]interfaceTransition{
 		OldMode: interfaceModeMCP,
 		OldRef:  `{"product_id":"im","rpc_name":"convert_message_to_thread"}`,
 		NewMode: interfaceModeMCP,
+	},
+	// contact 两阶段命令退役：钉钉号查 userId 的旧 MCP 已下线，退役叶子降级为
+	// composite/unavailable 并清除精确的历史 RPC 引用。
+	"contact/contact.get_user_id_by_dingtalk_id": {
+		OldMode: interfaceModeMCP,
+		OldRef:  `{"product_id":"contact","rpc_name":"get_user_id_by_dingtalk_id"}`,
+		NewMode: "composite",
 	},
 }
 
