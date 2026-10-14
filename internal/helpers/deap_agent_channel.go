@@ -261,10 +261,12 @@ func runDeapConnect(cmd *cobra.Command, _ []string) error {
 		}
 	}
 	cfg := digitalEmployeeAdapterConfig{Binding: binding, Name: findJSONScalar(draft, "name"), AlwaysOn: commandBoolFlag(cmd, "alwayson")}
-	cfg.SelfOpenDingTalkID = publishedIdentity.OpenDingTalkID
-	if !validEmployeeSelfIdentity(cfg.SelfOpenDingTalkID) {
-		return fmt.Errorf("数字员工发布详情缺少自身 openDingTalkId，无法安全过滤自发消息")
+	// 入站发送者 ID 随员工 Token 上下文变化，不能复用主管查询的发布详情 ID。
+	cfg.SelfOpenDingTalkID, err = resolveExactOperatorOpenDingTalkID(cmd.Context(), token.AccessToken, token.UserID)
+	if err != nil || !validEmployeeSelfIdentity(cfg.SelfOpenDingTalkID) {
+		return fmt.Errorf("员工自身 userId 未能在员工身份下精确解析，无法安全过滤自发消息")
 	}
+	cfg.SelfIdentityProfile = digitalProfile
 	if channel != "dsh" {
 		cfg.Options, err = prepareDigitalEmployeeLocal(cmd, binding, token.AccessToken)
 		if err != nil {

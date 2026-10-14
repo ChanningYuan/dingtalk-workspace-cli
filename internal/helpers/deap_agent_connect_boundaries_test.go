@@ -42,6 +42,8 @@ func TestCrossPlatformCoverageEmployeeConnectCommitBoundaries(t *testing.T) {
 				cmd.Flags().Lookup("agent-cmd").Changed = false
 			}
 			switch scenario {
+			case "missing-self":
+				caller.responses["contact/search_contact_by_key_word"] = caller.responses["contact/search_contact_by_key_word"][:1]
 			case "draft":
 				delete(caller.responses, "deap-dev/get_digital_employee_detail")
 			case "cancelled-lock":

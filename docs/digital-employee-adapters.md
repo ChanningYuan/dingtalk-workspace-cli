@@ -69,7 +69,7 @@ connect 使用主管取得一次性授权码，严格使用返回的 Client ID �
 
 `channel capabilities.bindingAccessPolicy=true` 声明新协议；`channel binding --stdin` 仅接收 agentUuid、bindingRevision，始终返回 `accessPolicy: platform | local_allowlist`，平台策略同时返回用于自消息过滤的 `selfOpenDingTalkId`。Adapter 启动时核对 Profile、channel、revision、bound/running 与策略，再订阅员工消息；旧版本缺少该能力时提示升级，不猜测策略。受管判据是正式服务端绑定的有效 `runtimeBindingId`，仅有历史主管字段不会启用平台策略。
 
-旧绑定缺 `supervisorProfile` 可以正常启动，不再枚举本机账号或迁移主管身份。该字段仅为历史 JSON 读取保留，新绑定不写入；审批使用固定 operator，管理操作仍使用本次显式选择且已登录的主管 Profile。升级无需主管登录或修改原模型、权限、工作区和会话。自身开放 ID 优先读取匹配本地绑定的 adapter 配置；旧 DSH 配置缺少自身 ID 时，启动查询绑定阶段仅用员工自己的精确 Profile 解析一次自身身份，失败返回 self_identity_unavailable，不带主管身份、不查询可见范围、不在逐消息路径重试，也不改写绑定。
+旧绑定缺 `supervisorProfile` 可以正常启动，不再枚举本机账号或迁移主管身份。该字段仅为历史 JSON 读取保留，新绑定不写入；审批使用固定 operator，管理操作仍使用本次显式选择且已登录的主管 Profile。升级无需主管登录或修改原模型、权限、工作区和会话。自身开放 ID 必须在员工自己的 Token 上下文精确解析，不能使用主管查询的发布详情同名字段。新 adapter 保存 `selfIdentityProfile` 标记其员工 Profile 作用域，仅在作用域及绑定均匹配时复用自身 ID；旧配置缺少该标记或自身 ID 时，原生 worker 和 DSH 启动阶段只用员工自己的精确 Profile 解析一次，失败返回 self_identity_unavailable，不带主管身份、不查询可见范围、不在逐消息路径重试，也不改写旧配置或绑定。
 
 不同 Adapter 的已有绑定返回冲突，不隐式替换 DSH。
 

@@ -473,6 +473,13 @@ func runEmployeeWorker(parent context.Context, cfg digitalEmployeeAdapterConfig,
 	}()
 	// 使用刚核验的本地绑定；受管入站权限由平台投递保证。
 	cfg.Binding = binding
+	if employeeBindingAccessPolicy(binding) == "platform" && (cfg.SelfIdentityProfile != binding.DWSProfile || !validEmployeeSelfIdentity(cfg.SelfOpenDingTalkID)) {
+		cfg.SelfOpenDingTalkID, err = employeeBindingSelfIdentity(ctx, binding, true)
+		if err != nil {
+			return employeeTerminal("self_identity_unavailable")
+		}
+		cfg.SelfIdentityProfile = binding.DWSProfile
+	}
 	fwd, err := digitalEmployeeNewForwarder(ctx, cfg)
 	if err != nil {
 		return employeeTerminal("agent_unavailable")

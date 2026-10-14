@@ -30,11 +30,12 @@ func digitalEmployeeChannels() []string {
 }
 
 type digitalEmployeeAdapterConfig struct {
-	SelfOpenDingTalkID string                 `json:"selfOpenDingTalkId,omitempty"`
-	Binding            digitalEmployeeBinding `json:"binding"`
-	Options            connectAgentOptions    `json:"options"`
-	AlwaysOn           bool                   `json:"alwaysOn"`
-	Name               string                 `json:"name,omitempty"`
+	SelfOpenDingTalkID  string                 `json:"selfOpenDingTalkId,omitempty"`
+	SelfIdentityProfile string                 `json:"selfIdentityProfile,omitempty"`
+	Binding             digitalEmployeeBinding `json:"binding"`
+	Options             connectAgentOptions    `json:"options"`
+	AlwaysOn            bool                   `json:"alwaysOn"`
+	Name                string                 `json:"name,omitempty"`
 }
 
 // digitalEmployeeAdapter 接收已经完成身份准备的非敏感配置。

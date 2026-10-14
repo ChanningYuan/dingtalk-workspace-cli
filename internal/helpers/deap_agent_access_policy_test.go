@@ -52,7 +52,7 @@ func TestCrossPlatformCoverageEmployeeBindingPublishesPlatformPolicyWithoutSuper
 				t.Fatal(err)
 			}
 			before, _ := os.ReadFile(digitalEmployeeBindingPath(dir, b.DWSProfile))
-			if err := writeEmployeeJSON(filepath.Join(digitalEmployeeRuntimeDir(b.DWSProfile), "adapter.json"), digitalEmployeeAdapterConfig{Binding: b, SelfOpenDingTalkID: "employee-self"}); err != nil {
+			if err := writeEmployeeJSON(filepath.Join(digitalEmployeeRuntimeDir(b.DWSProfile), "adapter.json"), digitalEmployeeAdapterConfig{Binding: b, SelfOpenDingTalkID: "employee-self", SelfIdentityProfile: b.DWSProfile}); err != nil {
 				t.Fatal(err)
 			}
 			employeeNoRemoteAccess(t)
@@ -249,9 +249,14 @@ func TestCrossPlatformCoverageEmployeeOldManagedBindingStartsWithoutSupervisor(t
 }
 
 func TestCrossPlatformCoverageEmployeeBindingLegacySelfIdentity(t *testing.T) {
-	for _, scenario := range []string{"missing-adapter", "stale-adapter", "wrong-token", "lookup-fails", "binding-changed"} {
+	for _, scenario := range []string{"missing-adapter", "stale-adapter", "unverified-adapter", "wrong-token", "lookup-fails", "binding-changed"} {
 		t.Run(scenario, func(t *testing.T) {
 			dir, b := lifecycleFixture(t)
+			if scenario == "unverified-adapter" {
+				if err := writeEmployeeJSON(filepath.Join(digitalEmployeeRuntimeDir(b.DWSProfile), "adapter.json"), digitalEmployeeAdapterConfig{Binding: b, SelfOpenDingTalkID: "supervisor-scope-self"}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if scenario == "stale-adapter" {
 				stale := b
 				stale.BindingRevision--

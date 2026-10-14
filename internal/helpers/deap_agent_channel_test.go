@@ -477,7 +477,7 @@ func newSuccessfulConnectCaller(authResponse, contactResponse string) *digitalEm
 			`{"success":true,"data":{"status":"online","profile":{"corpId":"employee-corp","userId":"employee-user","openDingTalkId":"employee-self"}}}`,
 		},
 		"deap-dev/get_dws_auth_code":         {authResponse},
-		"contact/search_contact_by_key_word": {contactResponse},
+		"contact/search_contact_by_key_word": {contactResponse, `{"result":[{"userId":"employee-user","openDingTalkId":"employee-self"}]}`},
 	}}
 }
 
@@ -560,7 +560,7 @@ func TestCrossPlatformCoverageDingTalkTagConnectKeepsSupervisorCurrentAndUsesRet
 		"contact/search_contact_by_key_word": {`{"result":[{"userId":"supervisor-user","openDingTalkId":"operator-supervisor-scope"}]}`},
 	}, tokenResponses: map[string][]string{
 		"contact/get_current_user_profile":   {`{"result":[{"orgEmployeeModel":{"corpId":"employee-corp","orgName":"员工企业","userId":"employee-user","orgUserName":"本地员工"}}]}`},
-		"contact/search_contact_by_key_word": {`{"result":[{"userId":"supervisor-user","openDingTalkId":"operator-employee-scope"}]}`},
+		"contact/search_contact_by_key_word": {`{"result":[{"userId":"supervisor-user","openDingTalkId":"operator-employee-scope"}]}`, `{"result":[{"userId":"employee-user","openDingTalkId":"self-employee-scope"}]}`},
 	}}
 	InitDepsForTest(t, caller)
 	t.Setenv("DWS_DUMP_RAW", "1")
@@ -650,11 +650,11 @@ func TestCrossPlatformCoverageDingTalkTagConnectKeepsSupervisorCurrentAndUsesRet
 	if exchange.ClientID != "returned-client" || exchange.AuthCode != "one-time-secret" || exchange.PreserveProfile != "supervisor-corp:supervisor-user" {
 		t.Fatalf("managed exchange = %#v", exchange)
 	}
-	if len(caller.tokenCalls) != 3 || len(caller.tokens) != 3 || caller.tokens[2] != "supervisor-test-token" || caller.tokenCalls[2].toolName != "bind_local_agent" ||
+	if len(caller.tokenCalls) != 4 || len(caller.tokens) != 4 || caller.tokens[3] != "supervisor-test-token" || caller.tokenCalls[3].toolName != "bind_local_agent" ||
 		caller.tokens[0] != "managed-access-secret" || caller.tokens[1] != "managed-access-secret" ||
 		caller.tokenCalls[0].productID != "contact" || caller.tokenCalls[0].toolName != "get_current_user_profile" ||
 		caller.tokenCalls[1].productID != "contact" || caller.tokenCalls[1].toolName != "search_contact_by_key_word" ||
-		caller.tokenCalls[1].args["keyword"] != "supervisor-user" {
+		caller.tokenCalls[1].args["keyword"] != "supervisor-user" || caller.tokenCalls[2].args["keyword"] != "employee-user" || caller.tokens[2] != "managed-access-secret" {
 		t.Fatalf("managed identity lookup calls=%#v tokens=%#v", caller.tokenCalls, caller.tokens)
 	}
 	for _, call := range caller.calls {

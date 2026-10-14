@@ -85,7 +85,7 @@ func TestCrossPlatformCoverageEmployeeBindingViewAndUnbindResume(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			_, b := lifecycleFixture(t)
 			if strings.HasPrefix(scenario, "binding-") {
-				if err := writeEmployeeJSON(filepath.Join(digitalEmployeeRuntimeDir(b.DWSProfile), "adapter.json"), digitalEmployeeAdapterConfig{Binding: b, SelfOpenDingTalkID: "employee-self"}); err != nil {
+				if err := writeEmployeeJSON(filepath.Join(digitalEmployeeRuntimeDir(b.DWSProfile), "adapter.json"), digitalEmployeeAdapterConfig{Binding: b, SelfOpenDingTalkID: "employee-self", SelfIdentityProfile: b.DWSProfile}); err != nil {
 					t.Fatal(err)
 				}
 				auth.SetRuntimeProfile(b.DWSProfile)

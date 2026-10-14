@@ -34,12 +34,12 @@ func validEmployeeSelfIdentity(id string) bool {
 	return id == strings.TrimSpace(id) && validMachineString(id) && strings.IndexFunc(id, unicode.IsControl) < 0
 }
 
-// 新 connect 保存已验证的自身开放 ID。旧 DSH 配置缺失时仅在启动查绑定
-// 阶段，以员工自己的精确身份解析自己，不查主管、可见范围或部门，不改绑定。
+// 自身开放 ID 必须来自员工 Token 上下文，发布详情中的同名字段属于另一身份作用域。
+// 旧配置没有作用域标记时，只在启动解析员工自身一次，不查主管或可见范围、不改绑定。
 func employeeBindingSelfIdentity(parent context.Context, b digitalEmployeeBinding, required bool) (string, error) {
 	var cfg digitalEmployeeAdapterConfig
 	raw, err := os.ReadFile(filepath.Join(digitalEmployeeRuntimeDir(b.DWSProfile), "adapter.json"))
-	if err == nil && json.Unmarshal(raw, &cfg) == nil && sameEmployeeBinding(cfg.Binding, b) && cfg.Binding.RuntimeBindingID == b.RuntimeBindingID && cfg.Binding.DeviceID == b.DeviceID && validEmployeeSelfIdentity(cfg.SelfOpenDingTalkID) {
+	if err == nil && json.Unmarshal(raw, &cfg) == nil && sameEmployeeBinding(cfg.Binding, b) && cfg.Binding.RuntimeBindingID == b.RuntimeBindingID && cfg.Binding.DeviceID == b.DeviceID && validEmployeeSelfIdentity(cfg.SelfOpenDingTalkID) && (!required || cfg.SelfIdentityProfile == b.DWSProfile) {
 		return cfg.SelfOpenDingTalkID, nil
 	}
 	if !required {
