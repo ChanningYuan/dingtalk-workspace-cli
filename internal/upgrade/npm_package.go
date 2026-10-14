@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const (
@@ -45,12 +46,26 @@ type PreparedNPMPackage struct {
 
 // PrepareNPMPackage 直接下载并验证 npm 包，不执行包内脚本，也不依赖 npm/node。
 func PrepareNPMPackage(ctx context.Context, pkg NPMPackage, destDir string, skipSkills bool, showProgress func(float64, int64, int64)) (PreparedNPMPackage, error) {
+	return PrepareNPMPackageWithEvents(ctx, pkg, destDir, skipSkills, showProgress, nil)
+}
+
+// PrepareNPMPackageWithEvents 提供下载源、尝试次数与续传进度事件。
+func PrepareNPMPackageWithEvents(ctx context.Context, pkg NPMPackage, destDir string, skipSkills bool, showProgress func(float64, int64, int64), observer func(DownloadEvent)) (PreparedNPMPackage, error) {
 	integrity, err := parseNPMPackageIntegrity(pkg.Integrity)
 	if err != nil {
 		return PreparedNPMPackage{}, err
 	}
 	if !validRegistryURL(pkg.TarballURL) {
 		return PreparedNPMPackage{}, fmt.Errorf("npm tarball URL 无效或不安全")
+	}
+	if pkg.Artifacts != nil {
+		prepared, artifactErr := prepareNPMArtifacts(ctx, pkg, destDir, skipSkills, showProgress, observer)
+		if artifactErr == nil {
+			return prepared, nil
+		}
+		if ctx.Err() != nil || !downloadCanFallback(artifactErr) {
+			return PreparedNPMPackage{}, artifactErr
+		}
 	}
 	stage, err := os.MkdirTemp(destDir, "npm-package-")
 	if err != nil {
@@ -64,14 +79,20 @@ func PrepareNPMPackage(ctx context.Context, pkg NPMPackage, destDir string, skip
 	}()
 	archive := filepath.Join(stage, "package.tgz")
 	cfg := DefaultDownloadConfig()
+	cfg.Timeout = 30 * time.Minute
+	cfg.EventCallback = observer
 	cfg.MaxBytes = npmPackageMaxDownload
 	cfg.CheckRedirect = npmPackageRedirect
 	cfg.ProgressCallback = func(downloaded, total int64) {
-		if showProgress != nil && total > 0 {
-			showProgress(float64(downloaded)/float64(total)*100, downloaded, total)
+		if showProgress != nil {
+			percent := float64(0)
+			if total > 0 {
+				percent = float64(downloaded) / float64(total) * 100
+			}
+			showProgress(percent, downloaded, total)
 		}
 	}
-	size, err := DownloadWithConfig(ctx, pkg.TarballURL, archive, cfg)
+	size, err := downloadFromSources(ctx, npmTarballURLs(pkg), archive, cfg)
 	if err != nil {
 		return PreparedNPMPackage{}, err
 	}

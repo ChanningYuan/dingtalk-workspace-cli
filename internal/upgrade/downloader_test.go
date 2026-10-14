@@ -69,10 +69,10 @@ func TestDownload_HTTP500_RetriesAndFails(t *testing.T) {
 		t.Fatal("expected error after retries")
 	}
 
-	// 500 is not retriable (no "connection reset" pattern), so only 1 attempt
+	// 临时服务端失败应重试到配置的尝试上限。
 	got := atomic.LoadInt32(&attempts)
-	if got != 1 {
-		t.Errorf("attempts = %d, want 1 (500 is not retriable)", got)
+	if got != 2 {
+		t.Errorf("attempts = %d, want 2", got)
 	}
 }
 

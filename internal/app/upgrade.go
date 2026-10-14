@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,7 +49,7 @@ type upgradeRollbackManager interface {
 var (
 	newUpgradeReleaseClient           = func() upgradeReleaseClient { return upgrade.NewClient() }
 	newUpgradeRollback                = func() upgradeRollbackManager { return upgrade.NewRollbackManager() }
-	prepareUpgradeNPMPackage          = upgrade.PrepareNPMPackage
+	prepareUpgradeNPMPackage          = upgrade.PrepareNPMPackageWithEvents
 	ensureUpgradeDirs                 = upgrade.EnsureUpgradeDirectories
 	cleanupUpgradeStale               = upgrade.CleanupStaleFiles
 	upgradeNeedsUpgrade               = upgrade.NeedsUpgrade
@@ -517,13 +518,27 @@ func runUpgrade(ctx context.Context, opts upgradeOptions) error {
 
 	var checksumsContent, binaryArchivePath, skillsZipPath string
 	if release.NPM != nil {
-		fmt.Printf("  %s 下载并校验 npm 发布包...\n", stepFmt(2))
+		fmt.Printf("  %s 下载并校验升级文件...\n", stepFmt(2))
+		downloadStart := time.Now()
+		var downloadBase int64
 		prepared, prepareErr := prepareUpgradeNPMPackage(ctx, *release.NPM, tmpDir, opts.skipSkills, func(percent float64, downloaded, total int64) {
-			fmt.Printf("\r  %s 下载 npm 发布包 [%s] %5.1f%% (%.1fMB)", stepFmt(2), ugCyan(progressBar(percent)), percent, float64(downloaded)/1024/1024)
+			speed := float64(max(downloaded-downloadBase, 0)) / time.Since(downloadStart).Seconds() / 1024
+			if total <= 0 {
+				fmt.Printf("\r  %s 下载升级文件 (%.1fMB, 总大小未知, %.0fKB/s)", stepFmt(2), float64(downloaded)/1024/1024, speed)
+				return
+			}
+			fmt.Printf("\r  %s 下载升级文件 [%s] %5.1f%% (%.1f/%.1fMB, %.0fKB/s)", stepFmt(2), ugCyan(progressBar(percent)), percent, float64(downloaded)/1024/1024, float64(total)/1024/1024, speed)
+		}, func(event upgrade.DownloadEvent) {
+			downloadStart, downloadBase = time.Now(), event.Downloaded
+			source, _ := url.Parse(event.URL)
+			fmt.Printf("\n  下载源: %s  尝试 %d/%d  已保留 %.1fMB\n", source.Hostname(), event.Attempt, event.MaxAttempts, float64(event.Downloaded)/1024/1024)
+			if event.Err != nil {
+				fmt.Printf("  重试原因: %v\n", event.Err)
+			}
 		})
 		fmt.Println()
 		if prepareErr != nil {
-			return fmt.Errorf("准备 npm 发布包失败: %w", prepareErr)
+			return fmt.Errorf("准备升级文件失败: %w", prepareErr)
 		}
 		binaryArchivePath, skillsZipPath, checksumsContent = prepared.BinaryArchivePath, prepared.SkillsArchivePath, prepared.ChecksumsContent
 	} else {

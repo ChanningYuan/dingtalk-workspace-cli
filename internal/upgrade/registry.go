@@ -37,6 +37,7 @@ type NPMPackage struct {
 	Version     string
 	TarballURL  string
 	Integrity   string
+	Artifacts   *NPMArtifacts
 }
 
 func init() {
@@ -105,9 +106,10 @@ func validRegistryURL(raw string) bool {
 }
 
 type npmManifest struct {
-	Name       string `json:"name"`
-	Version    string `json:"version"`
-	Deprecated string `json:"deprecated"`
+	Name       string        `json:"name"`
+	Version    string        `json:"version"`
+	Deprecated string        `json:"deprecated"`
+	Artifacts  *NPMArtifacts `json:"dwsUpgrade,omitempty"`
 	Dist       struct {
 		Tarball   string `json:"tarball"`
 		Integrity string `json:"integrity"`
@@ -146,6 +148,9 @@ func validateNPMManifest(manifest npmManifest, track ReleaseTrack) error {
 	}
 	if !validRegistryURL(manifest.Dist.Tarball) {
 		return fmt.Errorf("npm tarball 地址无效")
+	}
+	if err := validateNPMArtifacts(manifest.Artifacts); err != nil {
+		return err
 	}
 	if !validNPMIntegrity(manifest.Dist.Integrity) {
 		return fmt.Errorf("npm 包缺少有效的 SHA-512/SHA-256 integrity")
@@ -192,7 +197,7 @@ func npmManifestToRelease(manifest npmManifest, registry string) *ReleaseInfo {
 		Version:    manifest.Version,
 		Prerelease: strings.Contains(core, "-"),
 		Assets:     assets,
-		NPM:        &NPMPackage{RegistryURL: registry, Name: manifest.Name, Version: manifest.Version, TarballURL: manifest.Dist.Tarball, Integrity: manifest.Dist.Integrity},
+		NPM:        &NPMPackage{RegistryURL: registry, Name: manifest.Name, Version: manifest.Version, TarballURL: manifest.Dist.Tarball, Integrity: manifest.Dist.Integrity, Artifacts: manifest.Artifacts},
 	}
 }
 

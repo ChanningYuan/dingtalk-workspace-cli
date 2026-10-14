@@ -557,7 +557,7 @@ func TestCrossPlatformCoverageDownloaderRetryControlEdges(t *testing.T) {
 	defer truncated.Close()
 	cfg := DefaultDownloadConfig()
 	cfg.MaxRetries = 1
-	if _, err := DownloadWithConfig(t.Context(), truncated.URL, filepath.Join(t.TempDir(), "out"), cfg); err == nil || !strings.Contains(err.Error(), "重试 1 次") {
+	if _, err := DownloadWithConfig(t.Context(), truncated.URL, filepath.Join(t.TempDir(), "out"), cfg); err == nil || !strings.Contains(err.Error(), "尝试 1 次") {
 		t.Fatalf("retry exhaustion = %v", err)
 	}
 

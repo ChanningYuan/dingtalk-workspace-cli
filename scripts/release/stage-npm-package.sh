@@ -53,4 +53,8 @@ done
 [ -f "$PKG_ROOT/assets/dws-skills.zip" ] || { printf 'dws-skills.zip is missing\n' >&2; exit 1; }
 [ -f "$PKG_ROOT/assets/checksums.txt" ] || { printf 'checksums.txt is missing\n' >&2; exit 1; }
 
+if [ -f "$SOURCE_ROOT/build/npm/write-upgrade-manifest.js" ]; then
+  node "$SOURCE_ROOT/build/npm/write-upgrade-manifest.js" "$PKG_ROOT"
+fi
+
 printf 'Staged npm package %s at %s\n' "$SEMVER" "$PKG_ROOT"

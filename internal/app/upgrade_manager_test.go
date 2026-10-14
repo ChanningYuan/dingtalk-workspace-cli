@@ -419,7 +419,7 @@ func TestCrossPlatformCoverageUpgradeManagedEntrypoints(t *testing.T) {
 }
 
 func TestCrossPlatformCoverageUpgradeNativeNPM(t *testing.T) {
-	for _, stage := range []string{"prepare-error", "version-error", "wrong-version", "success", "skip-skills"} {
+	for _, stage := range []string{"prepare-error", "version-error", "wrong-version", "success", "skip-skills", "unknown-total"} {
 		t.Run(stage, func(t *testing.T) {
 			r := testManagedRelease()
 			binary := upgrade.GitHubAsset{Name: "dws.zip"}
@@ -435,7 +435,11 @@ func TestCrossPlatformCoverageUpgradeNativeNPM(t *testing.T) {
 			testseam.Swap(t, &upgradeMkdirTemp, func(string, string) (string, error) { return "/controlled/cache", nil })
 			testseam.Swap(t, &upgradeRemoveAll, func(string) error { return nil })
 			testseam.Swap(t, &downloadUpgradeFile, func(string, string) (int64, error) { t.Fatal("npm path downloaded github asset"); return 0, nil })
-			testseam.Swap(t, &prepareUpgradeNPMPackage, func(_ context.Context, p upgrade.NPMPackage, _ string, skip bool, progress func(float64, int64, int64)) (upgrade.PreparedNPMPackage, error) {
+			testseam.Swap(t, &prepareUpgradeNPMPackage, func(_ context.Context, p upgrade.NPMPackage, _ string, skip bool, progress func(float64, int64, int64), observer func(upgrade.DownloadEvent)) (upgrade.PreparedNPMPackage, error) {
+				observer(upgrade.DownloadEvent{URL: "https://example.test/pkg.tgz", Attempt: 2, MaxAttempts: 3, Downloaded: 512, Err: errors.New("连接重置")})
+				if stage == "unknown-total" {
+					progress(0, 1024, 0)
+				}
 				progress(50, 1024, 2048)
 				if p.Name != upgradeNPMPackageName || skip != (stage == "skip-skills") {
 					t.Fatalf("prepare args: %+v %v", p, skip)
