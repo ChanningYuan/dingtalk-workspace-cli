@@ -15,7 +15,7 @@
 
 ## dev mcp — MCP 开发与发布
 
-`dev mcp` 是固定、可审计的开发命令树，不会把远端 `serverName` 或工具名注入为新的 Cobra 命令。已发布工具统一通过 `dws mcp published tools/invoke` 消费。
+`dev mcp` 是固定、可审计的开发命令树，不会把远端 `serverName` 或工具名注入为新的 Cobra 命令。只知道名称时先用 `dws mcp market search --keyword <关键词>` 从市场拿 `mcpId`，已发布工具统一通过 `dws mcp published tools/invoke` 消费。
 
 用户提供 OpenAPI/Swagger、Postman、curl 或接口文档并要求“做成 MCP / 给 Agent 用”时，也路由到本节。先完成接口拆分、三段式字段树、映射和鉴权设计，再执行 dry-run。当前不会创建动态命令缓存，也不得持久化 endpoint、工具名与含 `?key=` 的 URL。
 
@@ -25,6 +25,9 @@ dws dev mcp service list --format json
 dws dev mcp service create --name 示例服务 --description "示例" --server-name example-service --dry-run --format json
 dws dev mcp tool list --mcp-id <mcpId> --format json
 dws dev mcp tool publish --mcp-id <mcpId> --tool-id <toolId> --dry-run --format json
+
+# 市场搜索：只知道名称时先拿 mcpId（只读）
+dws mcp market search --keyword <关键词> --format json
 
 # 已发布工具：先查 Schema，再 dry-run，最后显式确认
 dws mcp published tools <mcpId> --format json
