@@ -41,14 +41,12 @@ const (
 var mcpMarketSearchFields = []string{"mcpId", "name", "description", "serverName", "official", "corpName", "charged"}
 
 func newMCPMarketGroup(caller edition.ToolCaller) *cobra.Command {
+	// GroupNavigationOnly installs the navigation RunE, so the group declares none.
 	group := &cobra.Command{
 		Use:               "market",
 		Short:             "钉钉 MCP 市场",
 		Args:              cobra.NoArgs,
 		DisableAutoGenTag: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
 	}
 	corecmd.ApplyGroupPolicy(group, corecmd.GroupPolicy{
 		Mode:        corecmd.GroupNavigationOnly,
@@ -117,7 +115,7 @@ func newMCPMarketSearchCommand(caller edition.ToolCaller) *cobra.Command {
 }
 
 func validateMCPMarketSearch(cmd *cobra.Command, _ []string) error {
-	if limit, err := mcpMarketSearchFlagInt(cmd, "limit"); err != nil || limit < 1 || limit > mcpMarketSearchMaxLimit {
+	if limit, err := cmd.Flags().GetInt("limit"); err != nil || limit < 1 || limit > mcpMarketSearchMaxLimit {
 		return apperrors.NewValidation(fmt.Sprintf("--limit 必须是 1-%d 的整数", mcpMarketSearchMaxLimit))
 	}
 	if flag := cmd.Flags().Lookup("cursor"); flag != nil {
@@ -137,7 +135,8 @@ func callMCPMarketSearch(cmd *cobra.Command, caller edition.ToolCaller, tool str
 	}
 	keyword, _ := args["search"].(string)
 	keyword = strings.TrimSpace(keyword)
-	pageSize := mcpMarketSearchInt(args["pageSize"], mcpMarketSearchDefaultLimit)
+	// --limit is an int flag with a default, validated before ResultCall runs.
+	pageSize, _ := args["pageSize"].(int)
 	page := 1
 	if cursor, ok := args["cursor"].(string); ok && strings.TrimSpace(cursor) != "" {
 		page, _ = strconv.Atoi(strings.TrimSpace(cursor)) // validated by validateMCPMarketSearch
@@ -233,30 +232,6 @@ func mcpMarketSearchResultSpec() *contract.ResultSpec {
 			"additionalProperties":false
 		}`),
 	}
-}
-
-func mcpMarketSearchFlagInt(cmd *cobra.Command, name string) (int, error) {
-	flag := cmd.Flags().Lookup(name)
-	if flag == nil {
-		return 0, fmt.Errorf("flag --%s is not registered", name)
-	}
-	return strconv.Atoi(strings.TrimSpace(flag.Value.String()))
-}
-
-func mcpMarketSearchInt(value any, fallback int) int {
-	switch v := value.(type) {
-	case int:
-		return v
-	case int64:
-		return int(v)
-	case float64:
-		return int(v)
-	case string:
-		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-			return n
-		}
-	}
-	return fallback
 }
 
 func mcpMarketSearchBoolPtr(v bool) *bool { return &v }
